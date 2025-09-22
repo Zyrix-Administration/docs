@@ -1,0 +1,19 @@
+---
+title: "kickPlayer"
+description: "Kick a connected player."
+---
+
+## Overview
+Removes a player from the server and records action.
+
+## Parameters
+- `src` `number` – Server ID
+- `reason` `string` – Kick reason
+- `staff_name` `string` – Actor label
+
+## Returns
+- `boolean` – True on success
+
+## Usage
+```lua
+local ok = exports['zyrix_admin']:kickPlayer(src, 'AFK too long', 'Console')

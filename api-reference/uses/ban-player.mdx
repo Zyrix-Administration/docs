@@ -1,0 +1,22 @@
+---
+title: "banPlayer"
+description: "Ban a connected player by server ID."
+---
+
+## Overview
+Bans a player. Supports temporary and permanent bans. Records action and sends webhooks if enabled.
+
+## Parameters
+- `src` `number` – Server ID
+- `reason` `string` – Ban reason
+- `duration_seconds` `number` – Seconds until expiry (`0` = permanent)
+- `staff_name` `string` – Actor label
+
+## Returns
+- `ok` `boolean`
+- `dataOrErr` `any` – API payload on success or error/status code
+
+## Usage
+```lua
+local ok, data = exports['zyrix_admin']:banPlayer(src, 'RDM', 3600, 'AdminName')
+if not ok then print('ban failed', data) end

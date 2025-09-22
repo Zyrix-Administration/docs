@@ -1,0 +1,19 @@
+---
+title: "warnPlayer"
+description: "Issue a warning to a player."
+---
+
+## Overview
+Adds a warning for a player and triggers webhook if enabled.
+
+## Parameters
+- `src` `number` – Server ID
+- `reason` `string` – Warning reason
+- `staff_name` `string` – Actor label
+
+## Returns
+- `boolean` – True if stored successfully
+
+## Usage
+```lua
+local ok = exports['zyrix_admin']:warnPlayer(src, 'Stop RDM', 'Moderator')

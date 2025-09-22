@@ -1,0 +1,21 @@
+---
+title: "snapshotPlayers"
+description: "Get a snapshot of connected players."
+---
+
+## Overview
+Returns full state of all connected players.
+
+## Parameters
+- none
+
+## Returns
+- `table[]` – Each entry contains:  
+  - `id`, `name`, `ping`, `license`, `identifiers`, `job`, `cash`, `bank`, `isStaff`
+
+## Usage
+```lua
+local players = exports['zyrix_admin']:snapshotPlayers()
+for _, p in ipairs(players) do
+  print(p.id, p.name, p.license)
+end

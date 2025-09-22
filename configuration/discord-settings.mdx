@@ -1,0 +1,93 @@
+---
+title: "Discord Settings"
+description: "Configure the Discord bot, role sync, and moderation webhooks."
+---
+
+## Overview
+Go to **Configuration → Discord Settings**. Enable the bot. Fill the required fields. Save.
+
+<Warning>
+Never paste your bot token publicly. Treat it like a password.
+</Warning>
+
+## Bot Toggle
+- **Discord Settings**  
+  Enables the Discord bot for role management and webhooks.
+
+## Core Fields
+- **Guild ID**  
+  The Discord server ID (snowflake).  
+  - Get it: Discord → User Settings → Advanced → enable *Developer Mode* → right-click your server → **Copy Server ID**.  
+  - Example: `123456789012345678`.
+
+- **Bot Token**  
+  Token from Discord Developer Portal → *Bot* → **Reset Token**.  
+  - Format: `MTA...kQ.Z...`  
+  - The bot must be in your guild.
+
+### Required Bot Intents
+Grant these on the bot page:
+- **Server Members Intent**
+
+Minimum permissions when inviting:
+- `Manage Roles` (for role linking)
+
+## Webhooks
+Each event has:
+- **Enable/Disable slider**  
+- **Webhook URL** input
+
+Create a webhook: Discord → *Server Settings* → *Integrations* → *Webhooks* → **New Webhook** → copy URL.
+
+### Events
+- **Ban Webhook**
+  - Sends when a player is banned.
+  - Payload includes: player name/ID, identifiers, reason, expires.
+
+- **Unban Webhook**
+  - Sends when a player is unbanned.
+  - Payload includes: identifier or ban ID, actor, reason.
+
+- **Kick Webhook**
+  - Sends when a player is kicked.
+  - Payload includes: player, actor, reason.
+
+- **Warning Webhook**
+  - Sends when a player is warned.
+  - Payload includes: player, actor, reason.
+
+- **Give-Item Webhook**
+  - Sends when staff give items.
+  - Payload includes: player, item, amount, actor, identifiers.
+
+- **Revive/Heal Webhook**
+  - Sends on revive or heal actions.
+  - Payload includes: player, actor, action type.
+
+## Validation
+- **Guild ID** must be a numeric string.  
+- **Bot Token** must be non-empty and valid.  
+- **Webhook URL** must start with `https://discord.com/api/webhooks/`.
+
+## Testing
+1. Enable the bot and save.  
+2. Confirm the bot is online in your server.  
+3. Enable one webhook, paste its URL, save.  
+4. Perform a test action (e.g., kick).  
+5. Check the target channel for an embed.
+
+## Role Linking Prerequisite
+Role-based permissions require:
+- Bot in guild with `Manage Roles`.  
+- Bot’s highest role above roles it must assign.  
+- **Guild ID** and **Bot Token** saved here.
+
+<Note>
+See **[Staff Permissions](/configuration/permissions)** for binding ranks to Discord roles.
+</Note>
+
+## Troubleshooting
+- **No webhook messages**: URL wrong or webhook deleted. Create a new webhook.  
+- **Bot offline**: token invalid or bot not in guild. Re-invite and reissue token.  
+- **Role sync fails**: missing `Manage Roles` or bot role is too low in hierarchy.  
+- **HTTP 401/403 from API**: panel credentials or server license misconfigured.

@@ -19,6 +19,13 @@
               "setup-server",
               "setting-up"
             ]
+          },
+          {
+            "group": "Start Configuring",
+            "pages": [
+              "configuration/permissions",
+              "configuration/discord-settings"
+            ]
           }
         ]
       },
@@ -29,6 +36,18 @@
             "group": "API documentation",
             "pages": [
               "api-reference/introduction"
+            ]
+          },
+          {
+            "group": "Exports",
+            "pages": [
+              "api-reference/uses/ban-player",
+              "api-reference/uses/checkBanSrc",
+              "api-reference/uses/fetchWarnings",
+              "api-reference/uses/kickPlayer",
+              "api-reference/uses/snapshotPlayers",
+              "api-reference/uses/unban-player",
+              "api-reference/uses/warnPlayer"
             ]
           }
         ]
@@ -57,13 +76,13 @@
     "links": [
       {
         "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "href": "https://discord.gg/zyrix"
       }
     ],
     "primary": {
       "type": "button",
       "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "href": "https://my.zyrixadmin.com/"
     }
   },
   "contextual": {

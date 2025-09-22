@@ -1,0 +1,20 @@
+---
+title: "fetchWarnings"
+description: "Fetch warnings for a specific identifier."
+---
+
+## Overview
+Retrieves stored warnings for any identifier.
+
+## Parameters
+- `identifier` `string` – e.g. `license:xxx`, `steam:xxx`, `discord:xxx`, `token:xxx`
+
+## Returns
+- `table[]` – List of warnings
+
+## Usage
+```lua
+local warns = exports['zyrix_admin']:fetchWarnings('license:abcd1234')
+for _, w in ipairs(warns) do
+  print(w.reason)
+end

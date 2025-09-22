@@ -1,0 +1,48 @@
+---
+title: "Staff Permissions"
+description: "Learn how to create ranks, assign staff, and manage permission flags through player identifiers, Discord roles, and ACE permissions."
+---
+
+## Overview
+Staff permissions are organized into **ranks**. Each rank is a container for permission flags and staff bindings.  
+A rank can grant access by:
+
+- **Players** — direct identifiers such as `license:...`, `steam:...`, `discord:...`, or `token:...`
+- **Discord Roles** — role snowflake IDs from your guild
+- **ACE Permissions** — FiveM ACE strings like `group.admin` or `zyrix.mod`
+
+When a player matches **any** of these bindings, they inherit the rank’s permissions.
+
+## Creating a Rank
+1. Navigate to **Permissions** in the sidebar.  
+2. Click **New Rank** in the top right.  
+3. Enter a descriptive label (e.g. `Owner`, `Moderator`) and save.  
+
+The new rank will appear in the table.
+
+## Editing a Rank
+### 1. Adjusting Permissions
+1. Click the **Pencil** icon for the rank.  
+2. The editor will open with categories (e.g., Self, Online, Vehicle).  
+3. Toggle an entire category on/off, or drill down and enable/disable individual permissions.
+
+### 2. Linking Staff
+1. Click the **Gear** icon for the rank.  
+2. In the dialog, you can bind staff in three ways:
+   - **Player Identifiers** — add one or more unique IDs (`license:xxxx`, `steam:xxxx`, etc.)  
+   - **Discord Roles** — add role snowflake IDs (requires Discord integration)  
+   - **ACE Permissions** — add ACE groups or explicit permission strings  
+3. Multiple binding methods can be combined. For example, you can assign a Discord role and also bind a specific player identifier.
+
+### 3. Saving Changes
+- After editing, click **Save**.  
+- Updates are applied immediately and synced to your server.
+
+## Best Practices
+- Create broad ranks (e.g., `Moderator`, `Admin`) instead of many micro-ranks.  
+- Use Discord roles for dynamic management. Update roles in Discord, and Zyrix will automatically sync staff access.  
+- Use ACE permissions if you want FiveM’s native security model to interoperate with Zyrix.  
+
+<Warning>
+For Discord Role linking to work, ensure [Discord Settings](/configuration/discord-settings) are fully configured with a valid Guild ID, Bot Token, and required role permissions.
+</Warning>

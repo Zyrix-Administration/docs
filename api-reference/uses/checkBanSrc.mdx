@@ -1,0 +1,21 @@
+---
+title: "checkBanSrc"
+description: "Check if a connected player is banned."
+---
+
+## Overview
+Checks a live player's identifiers against the ban list.
+
+## Parameters
+- `src` `number` – Server ID
+
+## Returns
+- `banned` `boolean`
+- `data` `table|nil` – If banned, includes `reason`, `expires_at`, `matched_identifier`
+
+## Usage
+```lua
+local banned, data = exports['zyrix_admin']:checkBanSrc(src)
+if banned then
+  print('Player is banned for reason:', data.reason)
+end

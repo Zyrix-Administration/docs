@@ -1,0 +1,21 @@
+---
+title: "unban"
+description: "Remove a ban by identifier or ban ID."
+---
+
+## Overview
+Unbans by numeric ban ID or any stored identifier.
+
+## Parameters
+- `identifier_or_banid` `string|number` – e.g. `license:xxx`, `steam:xxx`, `discord:xxx`, `token:xxx` or numeric ban ID
+- `staff_name` `string` – Actor label
+- `reason` `string` – Unban reason
+
+## Returns
+- `'unbanned'` on success  
+- `false` on failure
+
+## Usage
+```lua
+local res = exports['zyrix_admin']:unban('license:abcd1234', 'AdminName', 'Appeal approved')
+if res == 'unbanned' then print('player unbanned') end
