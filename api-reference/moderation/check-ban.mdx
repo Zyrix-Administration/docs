@@ -1,0 +1,494 @@
+---
+title: "Check Ban Status"
+description: "Verify player ban status with comprehensive ban information retrieval"
+---
+
+## Overview
+
+The `CheckBan` function allows staff members to verify if a player is currently banned and retrieve detailed ban information for review and decision-making.
+
+## CheckBan
+
+Check if a player is currently banned and retrieve ban details.
+
+### Syntax
+```lua
+local isBanned, banInfo = exports['zyrix_admin']:CheckBan(targetId)
+```
+
+### Parameters
+- `targetId` (number) - Server ID of the player to check
+
+### Returns
+- `isBanned` (boolean) - Whether the player is currently banned
+- `banInfo` (table|nil) - Ban information object if banned, nil if not banned
+
+### Ban Info Structure
+```lua
+{
+    id = 123,                      -- Ban ID
+    playerId = 456,                -- Banned player ID
+    playerName = "PlayerName",     -- Player name at time of ban
+    identifier = "steam:...",      -- Player identifier
+    staffId = 789,                 -- Staff member who issued ban
+    staffName = "AdminName",       -- Staff name at time of ban
+    reason = "Cheating",          -- Ban reason
+    duration = 3600,              -- Ban duration in seconds (0 = permanent)
+    timestamp = 1640995200,       -- Ban issue timestamp
+    expiry = 1640998800,          -- Ban expiry timestamp (nil if permanent)
+    active = true,                -- Whether ban is currently active
+    appealable = true             -- Whether ban can be appealed
+}
+```
+
+### Example
+```lua
+local isBanned, banInfo = exports['zyrix_admin']:CheckBan(targetId)
+
+if isBanned then
+    local timeLeft = banInfo.expiry and (banInfo.expiry - os.time()) or 0
+    
+    if banInfo.duration == 0 then
+        print(string.format("%s is permanently banned: %s", 
+              GetPlayerName(targetId), banInfo.reason))
+    else
+        print(string.format("%s is banned for %d more minutes: %s", 
+              GetPlayerName(targetId), math.ceil(timeLeft / 60), banInfo.reason))
+    end
+else
+    print(string.format("%s is not banned", GetPlayerName(targetId)))
+end
+```
+
+## Advanced Examples
+
+### Comprehensive Ban Information Display
+```lua
+local function displayBanInfo(staffId, targetId)
+    local isBanned, banInfo = exports['zyrix_admin']:CheckBan(targetId)
+    
+    if not isBanned then
+        TriggerClientEvent('notification', staffId, 
+            string.format("%s is not currently banned", GetPlayerName(targetId))
+        )
+        return
+    end
+    
+    -- Calculate time remaining
+    local timeLeft = 0
+    local timeText = "Permanent"
+    
+    if banInfo.expiry then
+        timeLeft = banInfo.expiry - os.time()
+        if timeLeft > 0 then
+            local days = math.floor(timeLeft / 86400)
+            local hours = math.floor((timeLeft % 86400) / 3600)
+            local minutes = math.floor((timeLeft % 3600) / 60)
+            
+            if days > 0 then
+                timeText = string.format("%dd %dh %dm", days, hours, minutes)
+            elseif hours > 0 then
+                timeText = string.format("%dh %dm", hours, minutes)
+            else
+                timeText = string.format("%dm", minutes)
+            end
+        else
+            timeText = "Expired (should be unbanned)"
+        end
+    end
+    
+    -- Display ban information
+    TriggerClientEvent('chat:addMessage', staffId, {
+        color = {255, 0, 0},
+        args = {"[Ban Info]", string.format("%s is banned", banInfo.playerName)}
+    })
+    
+    TriggerClientEvent('chat:addMessage', staffId, {
+        args = {"[Reason]", banInfo.reason}
+    })
+    
+    TriggerClientEvent('chat:addMessage', staffId, {
+        args = {"[Duration]", timeText}
+    })
+    
+    TriggerClientEvent('chat:addMessage', staffId, {
+        args = {"[Banned By]", banInfo.staffName}
+    })
+    
+    TriggerClientEvent('chat:addMessage', staffId, {
+        args = {"[Date]", os.date("%Y-%m-%d %H:%M:%S", banInfo.timestamp)}
+    })
+    
+    if banInfo.appealable then
+        TriggerClientEvent('chat:addMessage', staffId, {
+            args = {"[Appeals]", "This ban can be appealed"}
+        })
+    end
+end
+
+RegisterCommand('checkban', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/checkban <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId then
+        TriggerClientEvent('notification', source, "Invalid player ID")
+        return
+    end
+    
+    displayBanInfo(source, targetId)
+end, true)
+```
+
+### Ban Status Monitoring System
+```lua
+local banMonitor = {
+    monitoredPlayers = {},
+    checkInterval = 30000 -- Check every 30 seconds
+}
+
+function banMonitor.addPlayer(playerId, staffId)
+    banMonitor.monitoredPlayers[playerId] = {
+        staffId = staffId,
+        addedTime = os.time(),
+        lastCheck = 0
+    }
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Now monitoring ban status for %s", GetPlayerName(playerId))
+    )
+end
+
+function banMonitor.removePlayer(playerId)
+    if banMonitor.monitoredPlayers[playerId] then
+        local staffId = banMonitor.monitoredPlayers[playerId].staffId
+        monitoredPlayers[playerId] = nil
+        
+        if GetPlayerName(staffId) then
+            TriggerClientEvent('notification', staffId, 
+                string.format("Stopped monitoring %s", GetPlayerName(playerId))
+            )
+        end
+    end
+end
+
+function banMonitor.checkAll()
+    for playerId, monitorInfo in pairs(banMonitor.monitoredPlayers) do
+        if GetPlayerName(playerId) then
+            local isBanned, banInfo = exports['zyrix_admin']:CheckBan(playerId)
+            
+            if isBanned and banInfo then
+                -- Check if ban is about to expire
+                if banInfo.expiry then
+                    local timeLeft = banInfo.expiry - os.time()
+                    
+                    -- Notify staff if ban expires in less than 5 minutes
+                    if timeLeft <= 300 and timeLeft > 0 then
+                        if GetPlayerName(monitorInfo.staffId) then
+                            TriggerClientEvent('notification', monitorInfo.staffId, 
+                                string.format("%s's ban expires in %d minutes", 
+                                GetPlayerName(playerId), math.ceil(timeLeft / 60))
+                            )
+                        end
+                    elseif timeLeft <= 0 then
+                        -- Ban has expired
+                        if GetPlayerName(monitorInfo.staffId) then
+                            TriggerClientEvent('notification', monitorInfo.staffId, 
+                                string.format("%s's ban has expired", GetPlayerName(playerId))
+                            )
+                        end
+                        banMonitor.removePlayer(playerId)
+                    end
+                end
+            else
+                -- Player is no longer banned
+                if GetPlayerName(monitorInfo.staffId) then
+                    TriggerClientEvent('notification', monitorInfo.staffId, 
+                        string.format("%s is no longer banned", GetPlayerName(playerId))
+                    )
+                end
+                banMonitor.removePlayer(playerId)
+            end
+            
+            monitorInfo.lastCheck = os.time()
+        else
+            -- Player disconnected
+            banMonitor.removePlayer(playerId)
+        end
+    end
+end
+
+-- Start monitoring thread
+CreateThread(function()
+    while true do
+        Wait(banMonitor.checkInterval)
+        banMonitor.checkAll()
+    end
+end)
+
+RegisterCommand('monitorban', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/monitorban <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    banMonitor.addPlayer(targetId, source)
+end, true)
+```
+
+### Ban History Analysis
+```lua
+local function analyzeBanHistory(playerId)
+    local currentBan = exports['zyrix_admin']:CheckBan(playerId)
+    local banHistory = exports['zyrix_admin']:GetPlayerBanHistory(playerId) -- Hypothetical function
+    
+    local analysis = {
+        currentlyBanned = false,
+        totalBans = 0,
+        permanentBans = 0,
+        temporaryBans = 0,
+        averageDuration = 0,
+        mostCommonReason = nil,
+        lastBanDate = nil,
+        banFrequency = 0
+    }
+    
+    if currentBan then
+        analysis.currentlyBanned = true
+    end
+    
+    if banHistory and #banHistory > 0 then
+        analysis.totalBans = #banHistory
+        
+        local totalDuration = 0
+        local reasonCount = {}
+        local timestamps = {}
+        
+        for _, ban in ipairs(banHistory) do
+            if ban.duration == 0 then
+                analysis.permanentBans = analysis.permanentBans + 1
+            else
+                analysis.temporaryBans = analysis.temporaryBans + 1
+                totalDuration = totalDuration + ban.duration
+            end
+            
+            -- Count reasons
+            local reason = ban.reason:match("%[(.-)%]") or "Other"
+            reasonCount[reason] = (reasonCount[reason] or 0) + 1
+            
+            -- Collect timestamps
+            table.insert(timestamps, ban.timestamp)
+        end
+        
+        -- Calculate average duration (temporary bans only)
+        if analysis.temporaryBans > 0 then
+            analysis.averageDuration = totalDuration / analysis.temporaryBans
+        end
+        
+        -- Find most common reason
+        local maxCount = 0
+        for reason, count in pairs(reasonCount) do
+            if count > maxCount then
+                maxCount = count
+                analysis.mostCommonReason = reason
+            end
+        end
+        
+        -- Calculate ban frequency (bans per month)
+        if #timestamps > 1 then
+            table.sort(timestamps)
+            local timeSpan = timestamps[#timestamps] - timestamps[1]
+            local months = timeSpan / 2592000 -- Convert to months
+            analysis.banFrequency = #banHistory / math.max(months, 1)
+        end
+        
+        analysis.lastBanDate = timestamps[#timestamps]
+    end
+    
+    return analysis
+end
+
+RegisterCommand('banhistory', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/banhistory <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId then
+        TriggerClientEvent('notification', source, "Invalid player ID")
+        return
+    end
+    
+    local analysis = analyzeBanHistory(targetId)
+    
+    TriggerClientEvent('chat:addMessage', source, {
+        color = {255, 165, 0},
+        args = {"[Ban History]", string.format("%s - Total: %d bans", 
+               GetPlayerName(targetId) or "Unknown", analysis.totalBans)}
+    })
+    
+    if analysis.currentlyBanned then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Status]", "Currently banned"}
+        })
+    end
+    
+    if analysis.totalBans > 0 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Breakdown]", string.format("Permanent: %d, Temporary: %d", 
+                   analysis.permanentBans, analysis.temporaryBans)}
+        })
+        
+        if analysis.mostCommonReason then
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Common Reason]", analysis.mostCommonReason}
+            })
+        end
+        
+        if analysis.banFrequency > 0 then
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Frequency]", string.format("%.1f bans per month", analysis.banFrequency)}
+            })
+        end
+    end
+end, true)
+```
+
+### Bulk Ban Status Check
+```lua
+local function checkMultipleBans(staffId, playerIds)
+    local results = {
+        banned = {},
+        notBanned = {},
+        errors = {}
+    }
+    
+    for _, playerId in ipairs(playerIds) do
+        local playerName = GetPlayerName(playerId)
+        
+        if playerName then
+            local isBanned, banInfo = exports['zyrix_admin']:CheckBan(playerId)
+            
+            if isBanned then
+                table.insert(results.banned, {
+                    id = playerId,
+                    name = playerName,
+                    reason = banInfo.reason,
+                    duration = banInfo.duration
+                })
+            else
+                table.insert(results.notBanned, playerId)
+            end
+        else
+            table.insert(results.errors, playerId)
+        end
+    end
+    
+    -- Display results
+    if #results.banned > 0 then
+        TriggerClientEvent('chat:addMessage', staffId, {
+            color = {255, 0, 0},
+            args = {"[Banned Players]", string.format("%d players are banned", #results.banned)}
+        })
+        
+        for i, player in ipairs(results.banned) do
+            if i <= 5 then -- Show first 5
+                local durationText = player.duration == 0 and "Permanent" or string.format("%dm", player.duration / 60)
+                TriggerClientEvent('chat:addMessage', staffId, {
+                    args = {string.format("[%d]", player.id), 
+                           string.format("%s (%s): %s", player.name, durationText, player.reason)}
+                })
+            end
+        end
+    end
+    
+    if #results.notBanned > 0 then
+        TriggerClientEvent('chat:addMessage', staffId, {
+            color = {0, 255, 0},
+            args = {"[Clean Players]", string.format("%d players not banned", #results.notBanned)}
+        })
+    end
+    
+    if #results.errors > 0 then
+        TriggerClientEvent('chat:addMessage', staffId, {
+            color = {255, 165, 0},
+            args = {"[Errors]", string.format("%d player IDs not found", #results.errors)}
+        })
+    end
+    
+    return results
+end
+
+RegisterCommand('checkbans', function(source, args)
+    if #args == 0 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/checkbans <player_id1> [player_id2] [player_id3] ..."}
+        })
+        return
+    end
+    
+    local playerIds = {}
+    for _, arg in ipairs(args) do
+        local playerId = tonumber(arg)
+        if playerId then
+            table.insert(playerIds, playerId)
+        end
+    end
+    
+    if #playerIds == 0 then
+        TriggerClientEvent('notification', source, "No valid player IDs provided")
+        return
+    end
+    
+    checkMultipleBans(source, playerIds)
+end, true)
+```
+
+## Error Handling
+
+```lua
+local function safeCheckBan(targetId)
+    -- Validate player ID
+    if not targetId or type(targetId) ~= 'number' then
+        return false, nil, "Invalid player ID"
+    end
+    
+    if targetId <= 0 then
+        return false, nil, "Player ID must be positive"
+    end
+    
+    -- Check ban status
+    local success, isBanned, banInfo = pcall(function()
+        return exports['zyrix_admin']:CheckBan(targetId)
+    end)
+    
+    if not success then
+        return false, nil, "Failed to check ban status"
+    end
+    
+    return true, isBanned, banInfo
+end
+```
+
+<Info>
+  Ban status checking is essential for verifying player eligibility and making informed moderation decisions. Always check ban status before issuing additional punishments.
+</Info>
+
+<Tip>
+  Use ban monitoring systems to track ban expiration times and ensure timely follow-up actions or automatic unbans when appropriate.
+</Tip>

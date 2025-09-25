@@ -1,0 +1,494 @@
+---
+title: "State Functions"
+description: "Control player states including freeze, movement, and other behavioral modifications"
+---
+
+## Overview
+
+The Zyrix API provides comprehensive player state management functions for controlling player movement, freezing, and other behavioral states. These functions are essential for administrative control and event management.
+
+## FreezePlayer
+
+Control player movement by freezing or unfreezing them.
+
+### Syntax
+```lua
+local success, status, newState = exports['zyrix_admin']:FreezePlayer(staffId, targetId, freeze)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member performing the action
+- `targetId` (number) - Server ID of the player to freeze/unfreeze
+- `freeze` (boolean, optional) - `true` to freeze, `false` to unfreeze, `nil` to toggle
+
+### Returns
+- `success` (boolean) - Whether the action succeeded
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'invalid_target'`
+- `newState` (boolean) - The player's new freeze state
+
+### Example
+```lua
+-- Freeze a player
+local success, status, isFrozen = exports['zyrix_admin']:FreezePlayer(source, targetId, true)
+
+if success then
+    local stateText = isFrozen and "frozen" or "unfrozen"
+    TriggerClientEvent('notification', source, 
+        string.format("Player %s has been %s", GetPlayerName(targetId), stateText)
+    )
+else
+    print("Freeze action failed:", status)
+end
+
+-- Toggle freeze state
+local success, status, isFrozen = exports['zyrix_admin']:FreezePlayer(source, targetId)
+```
+
+## SetPlayerInvincible
+
+Make a player invincible or vulnerable to damage.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:SetPlayerInvincible(staffId, targetId, invincible)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `targetId` (number) - Server ID of the target player
+- `invincible` (boolean) - `true` for invincible, `false` for vulnerable
+
+### Returns
+- `success` (boolean) - Whether the action succeeded
+- `status` (string) - Status code
+
+### Example
+```lua
+-- Make player invincible for event
+local success, status = exports['zyrix_admin']:SetPlayerInvincible(source, targetId, true)
+
+if success then
+    TriggerClientEvent('notification', targetId, "You are now invincible!")
+    TriggerClientEvent('notification', source, 
+        string.format("%s is now invincible", GetPlayerName(targetId))
+    )
+end
+```
+
+## Advanced Examples
+
+### Temporary Freeze System
+```lua
+local temporaryFreezes = {}
+
+local function temporaryFreeze(staffId, targetId, duration)
+    -- Freeze the player
+    local success, status = exports['zyrix_admin']:FreezePlayer(staffId, targetId, true)
+    
+    if not success then
+        return false, status
+    end
+    
+    -- Store freeze information
+    temporaryFreezes[targetId] = {
+        staffId = staffId,
+        startTime = os.time(),
+        duration = duration,
+        timerId = nil
+    }
+    
+    -- Set unfreeze timer
+    temporaryFreezes[targetId].timerId = SetTimeout(duration * 1000, function()
+        local unfreezeSuccess = exports['zyrix_admin']:FreezePlayer(staffId, targetId, false)
+        
+        if unfreezeSuccess then
+            TriggerClientEvent('notification', targetId, 
+                string.format("You have been unfrozen after %d seconds", duration)
+            )
+            TriggerClientEvent('notification', staffId, 
+                string.format("%s has been automatically unfrozen", GetPlayerName(targetId))
+            )
+        end
+        
+        temporaryFreezes[targetId] = nil
+    end)
+    
+    TriggerClientEvent('notification', targetId, 
+        string.format("You have been frozen for %d seconds", duration)
+    )
+    
+    return true, "success"
+end
+
+-- Command for temporary freeze
+RegisterCommand('tfreeze', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/tfreeze <player_id> <seconds>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local duration = tonumber(args[2])
+    
+    if not targetId or not duration or duration <= 0 then
+        TriggerClientEvent('notification', source, "Invalid parameters")
+        return
+    end
+    
+    temporaryFreeze(source, targetId, duration)
+end, true)
+```
+
+### Freeze Zone System
+```lua
+local freezeZones = {}
+
+-- Create a freeze zone
+function createFreezeZone(name, center, radius)
+    freezeZones[name] = {
+        center = center,
+        radius = radius,
+        activePlayers = {}
+    }
+end
+
+-- Check if player is in freeze zone
+function isPlayerInFreezeZone(playerId)
+    local playerCoords = GetEntityCoords(GetPlayerPed(playerId))
+    
+    for zoneName, zone in pairs(freezeZones) do
+        local distance = #(playerCoords - zone.center)
+        if distance <= zone.radius then
+            return true, zoneName
+        end
+    end
+    
+    return false, nil
+end
+
+-- Monitor players for freeze zones
+CreateThread(function()
+    while true do
+        Wait(1000) -- Check every second
+        
+        local players = GetPlayers()
+        for _, playerId in ipairs(players) do
+            local inZone, zoneName = isPlayerInFreezeZone(playerId)
+            
+            if inZone then
+                -- Player entered freeze zone
+                if not freezeZones[zoneName].activePlayers[playerId] then
+                    local success = exports['zyrix_admin']:FreezePlayer(1, playerId, true) -- Console freeze
+                    if success then
+                        freezeZones[zoneName].activePlayers[playerId] = true
+                        TriggerClientEvent('notification', playerId, 
+                            string.format("Entered freeze zone: %s", zoneName)
+                        )
+                    end
+                end
+            else
+                -- Check if player left any freeze zones
+                for zoneName, zone in pairs(freezeZones) do
+                    if zone.activePlayers[playerId] then
+                        local success = exports['zyrix_admin']:FreezePlayer(1, playerId, false) -- Console unfreeze
+                        if success then
+                            zone.activePlayers[playerId] = nil
+                            TriggerClientEvent('notification', playerId, 
+                                string.format("Left freeze zone: %s", zoneName)
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Example: Create freeze zones
+createFreezeZone("Courtroom", vector3(240.0, -1004.0, 29.0), 10.0)
+createFreezeZone("Event Stage", vector3(-265.0, -963.0, 31.0), 15.0)
+```
+
+### Player State Manager
+```lua
+local playerStates = {}
+
+local PlayerStateManager = {}
+
+-- Initialize player state
+function PlayerStateManager.initPlayer(playerId)
+    playerStates[playerId] = {
+        isFrozen = false,
+        isInvincible = false,
+        isInvisible = false,
+        frozenBy = nil,
+        frozenTime = nil,
+        lastUpdate = os.time()
+    }
+end
+
+-- Update player state
+function PlayerStateManager.updateState(playerId, stateType, value, staffId)
+    if not playerStates[playerId] then
+        PlayerStateManager.initPlayer(playerId)
+    end
+    
+    local oldValue = playerStates[playerId][stateType]
+    playerStates[playerId][stateType] = value
+    playerStates[playerId].lastUpdate = os.time()
+    
+    if stateType == "isFrozen" then
+        playerStates[playerId].frozenBy = value and staffId or nil
+        playerStates[playerId].frozenTime = value and os.time() or nil
+    end
+    
+    -- Trigger state change event
+    TriggerEvent('playerStateChanged', playerId, stateType, oldValue, value, staffId)
+end
+
+-- Get player state
+function PlayerStateManager.getState(playerId, stateType)
+    if not playerStates[playerId] then
+        return false
+    end
+    return playerStates[playerId][stateType] or false
+end
+
+-- Enhanced freeze function with state tracking
+function PlayerStateManager.freezePlayer(staffId, targetId, freeze)
+    local success, status, newState = exports['zyrix_admin']:FreezePlayer(staffId, targetId, freeze)
+    
+    if success then
+        PlayerStateManager.updateState(targetId, "isFrozen", newState, staffId)
+        
+        -- Log the action
+        local action = newState and "froze" or "unfroze"
+        print(string.format("[STATE] %s %s %s", 
+              GetPlayerName(staffId), action, GetPlayerName(targetId)))
+    end
+    
+    return success, status, newState
+end
+
+-- Cleanup on player disconnect
+AddEventHandler('playerDropped', function()
+    local playerId = source
+    if playerStates[playerId] then
+        playerStates[playerId] = nil
+    end
+end)
+```
+
+### Bulk State Management
+```lua
+local function bulkFreezeOperation(staffId, playerIds, freeze, reason)
+    local results = {
+        success = {},
+        failed = {},
+        total = #playerIds
+    }
+    
+    for _, playerId in ipairs(playerIds) do
+        local success, status = exports['zyrix_admin']:FreezePlayer(staffId, playerId, freeze)
+        
+        if success then
+            table.insert(results.success, playerId)
+            TriggerClientEvent('notification', playerId, 
+                string.format("You have been %s. Reason: %s", 
+                freeze and "frozen" or "unfrozen", reason or "Administrative action")
+            )
+        else
+            table.insert(results.failed, {id = playerId, reason = status})
+        end
+    end
+    
+    -- Notify staff member of results
+    local action = freeze and "frozen" or "unfrozen"
+    TriggerClientEvent('notification', staffId, 
+        string.format("Bulk %s: %d success, %d failed", 
+        action, #results.success, #results.failed)
+    )
+    
+    return results
+end
+
+-- Command for mass freeze
+RegisterCommand('massfreeze', function(source, args)
+    local reason = table.concat(args, " ")
+    if reason == "" then reason = "Mass administrative action" end
+    
+    local players = GetPlayers()
+    local targetPlayers = {}
+    
+    -- Exclude staff member
+    for _, playerId in ipairs(players) do
+        if playerId ~= source then
+            table.insert(targetPlayers, playerId)
+        end
+    end
+    
+    bulkFreezeOperation(source, targetPlayers, true, reason)
+end, true)
+
+RegisterCommand('massunfreeze', function(source, args)
+    local players = GetPlayers()
+    local targetPlayers = {}
+    
+    -- Exclude staff member
+    for _, playerId in ipairs(players) do
+        if playerId ~= source then
+            table.insert(targetPlayers, playerId)
+        end
+    end
+    
+    bulkFreezeOperation(source, targetPlayers, false, "Mass unfreeze")
+end, true)
+```
+
+### Event Mode State Control
+```lua
+local eventMode = {
+    active = false,
+    frozenPlayers = {},
+    invinciblePlayers = {},
+    originalStates = {}
+}
+
+-- Start event mode - freeze all players and make them invincible
+function eventMode.start(staffId)
+    if eventMode.active then
+        return false, "Event mode already active"
+    end
+    
+    eventMode.active = true
+    eventMode.frozenPlayers = {}
+    eventMode.invinciblePlayers = {}
+    eventMode.originalStates = {}
+    
+    local players = GetPlayers()
+    
+    for _, playerId in ipairs(players) do
+        -- Store original states
+        local playerPed = GetPlayerPed(playerId)
+        eventMode.originalStates[playerId] = {
+            frozen = IsPedFrozen(playerPed),
+            invincible = GetPlayerInvincible(playerId)
+        }
+        
+        -- Apply event states
+        local freezeSuccess = exports['zyrix_admin']:FreezePlayer(staffId, playerId, true)
+        local invincibleSuccess = exports['zyrix_admin']:SetPlayerInvincible(staffId, playerId, true)
+        
+        if freezeSuccess then
+            table.insert(eventMode.frozenPlayers, playerId)
+        end
+        if invincibleSuccess then
+            table.insert(eventMode.invinciblePlayers, playerId)
+        end
+        
+        TriggerClientEvent('notification', playerId, "Event mode activated - You are frozen and invincible")
+    end
+    
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {255, 215, 0},
+        multiline = false,
+        args = {"[Event]", "Event mode activated - All players frozen"}
+    })
+    
+    return true, "Event mode started"
+end
+
+-- End event mode - restore original states
+function eventMode.stop(staffId)
+    if not eventMode.active then
+        return false, "Event mode not active"
+    end
+    
+    -- Restore original states
+    for playerId, originalState in pairs(eventMode.originalStates) do
+        if GetPlayerName(playerId) then -- Player still online
+            exports['zyrix_admin']:FreezePlayer(staffId, playerId, originalState.frozen)
+            exports['zyrix_admin']:SetPlayerInvincible(staffId, playerId, originalState.invincible)
+            
+            TriggerClientEvent('notification', playerId, "Event mode deactivated - States restored")
+        end
+    end
+    
+    -- Clear event mode data
+    eventMode.active = false
+    eventMode.frozenPlayers = {}
+    eventMode.invinciblePlayers = {}
+    eventMode.originalStates = {}
+    
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {255, 215, 0},
+        multiline = false,
+        args = {"[Event]", "Event mode deactivated - States restored"}
+    })
+    
+    return true, "Event mode stopped"
+end
+
+-- Commands for event mode
+RegisterCommand('startevent', function(source, args)
+    local success, message = eventMode.start(source)
+    TriggerClientEvent('notification', source, message)
+end, true)
+
+RegisterCommand('stopevent', function(source, args)
+    local success, message = eventMode.stop(source)
+    TriggerClientEvent('notification', source, message)
+end, true)
+```
+
+## Error Handling
+
+Handle common scenarios when managing player states:
+
+```lua
+local function safeFreezePlayer(staffId, targetId, freeze)
+    -- Validate players exist
+    if not GetPlayerName(staffId) then
+        return false, "Staff member not found"
+    end
+    
+    if not GetPlayerName(targetId) then
+        return false, "Target player not found"
+    end
+    
+    -- Check if action is necessary
+    local playerPed = GetPlayerPed(targetId)
+    local currentlyFrozen = IsPedFrozen(playerPed)
+    
+    if freeze ~= nil and currentlyFrozen == freeze then
+        local stateText = freeze and "already frozen" or "already unfrozen"
+        return false, string.format("Player is %s", stateText)
+    end
+    
+    -- Attempt freeze action
+    local success, status, newState = exports['zyrix_admin']:FreezePlayer(staffId, targetId, freeze)
+    
+    if not success then
+        local errorMessages = {
+            no_permission = "You don't have permission to freeze players",
+            player_not_found = "Target player not found",
+            invalid_target = "Invalid player ID"
+        }
+        
+        local message = errorMessages[status] or ("Freeze action failed: " .. status)
+        TriggerClientEvent('notification', staffId, message)
+    end
+    
+    return success, status, newState
+end
+```
+
+<Info>
+  Player state functions are powerful tools for server management. Use them responsibly and always provide clear communication to affected players.
+</Info>
+
+<Tip>
+  Consider implementing automatic state restoration systems for temporary administrative actions to prevent players from being permanently stuck in modified states.
+</Tip>

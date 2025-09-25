@@ -1,0 +1,471 @@
+---
+title: "Vehicle Spawning"
+description: "Spawn vehicles with customization options and comprehensive error handling"
+---
+
+## Overview
+
+The Zyrix API provides comprehensive vehicle spawning functions that allow staff members to create vehicles with custom properties, colors, and modifications.
+
+## SpawnVehicle
+
+Spawn a vehicle at specified coordinates with optional customization.
+
+### Syntax
+```lua
+local success, status, vehicleNetId = exports['zyrix_admin']:SpawnVehicle(staffId, model, coords, customization)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member spawning the vehicle
+- `model` (string|number) - Vehicle model name or hash
+- `coords` (vector4) - Spawn coordinates with heading
+- `customization` (table, optional) - Vehicle customization options
+
+### Customization Options
+```lua
+{
+    color = {primary = {255, 0, 0}, secondary = {0, 0, 255}}, -- RGB colors
+    plate = "CUSTOM01",           -- Custom license plate (max 8 characters)
+    mods = {                      -- Vehicle modifications
+        engine = 3,               -- Engine level (0-4)
+        brakes = 2,               -- Brake level (0-3)
+        transmission = 2,         -- Transmission level (0-3)
+        suspension = 1            -- Suspension level (0-4)
+    },
+    extras = {1, 3, 5},          -- Active vehicle extras
+    livery = 2,                  -- Vehicle livery ID
+    drift = false,               -- Drift mode
+    godMode = false              -- Vehicle god mode
+}
+```
+
+### Returns
+- `success` (boolean) - Whether the vehicle was spawned successfully
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'invalid_model'`, `'invalid_coords'`
+- `vehicleNetId` (number) - Network ID of the spawned vehicle
+
+### Example
+```lua
+-- Spawn basic vehicle
+local coords = vector4(100.0, 200.0, 30.0, 90.0)
+local success, status, netId = exports['zyrix_admin']:SpawnVehicle(source, "adder", coords)
+
+if success then
+    TriggerClientEvent('notification', source, "Vehicle spawned successfully")
+    print("Vehicle Net ID:", netId)
+else
+    TriggerClientEvent('notification', source, "Failed to spawn vehicle: " .. status)
+end
+
+-- Spawn customized vehicle
+local customization = {
+    color = {primary = {255, 0, 0}, secondary = {0, 255, 0}},
+    plate = "ADMIN01",
+    mods = {engine = 4, brakes = 3},
+    godMode = true
+}
+
+local success, status, netId = exports['zyrix_admin']:SpawnVehicle(source, "zentorno", coords, customization)
+```
+
+## Advanced Examples
+
+### Vehicle Preset System
+```lua
+local vehiclePresets = {
+    ["police"] = {
+        model = "police",
+        customization = {
+            color = {primary = {255, 255, 255}, secondary = {0, 0, 0}},
+            mods = {engine = 3, brakes = 3, transmission = 3},
+            extras = {1, 2, 3},
+            plate = "LSPD"
+        }
+    },
+    ["racing"] = {
+        model = "zentorno",
+        customization = {
+            color = {primary = {255, 0, 0}, secondary = {0, 0, 0}},
+            mods = {engine = 4, brakes = 3, transmission = 3, suspension = 2},
+            drift = true,
+            plate = "RACE01"
+        }
+    },
+    ["admin"] = {
+        model = "adder",
+        customization = {
+            color = {primary = {255, 215, 0}, secondary = {0, 0, 0}},
+            mods = {engine = 4, brakes = 3, transmission = 3},
+            godMode = true,
+            plate = "ADMIN"
+        }
+    }
+}
+
+local function spawnPresetVehicle(staffId, presetName, coords)
+    local preset = vehiclePresets[presetName:lower()]
+    if not preset then
+        return false, "Unknown vehicle preset"
+    end
+    
+    local success, status, netId = exports['zyrix_admin']:SpawnVehicle(
+        staffId, 
+        preset.model, 
+        coords, 
+        preset.customization
+    )
+    
+    if success then
+        print(string.format("[PRESET SPAWN] %s spawned %s preset vehicle", 
+              GetPlayerName(staffId), presetName))
+    end
+    
+    return success, status, netId
+end
+
+RegisterCommand('spawnpreset', function(source, args)
+    if #args < 1 then
+        local presetNames = {}
+        for name, _ in pairs(vehiclePresets) do
+            table.insert(presetNames, name)
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/spawnpreset <preset_name>"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Presets]", table.concat(presetNames, ", ")}
+        })
+        return
+    end
+    
+    local presetName = args[1]
+    local playerPed = GetPlayerPed(source)
+    local playerCoords = GetEntityCoords(playerPed)
+    local heading = GetEntityHeading(playerPed)
+    
+    -- Spawn slightly in front of player
+    local forwardX = playerCoords.x + math.cos(math.rad(heading + 90)) * 3
+    local forwardY = playerCoords.y + math.sin(math.rad(heading + 90)) * 3
+    local coords = vector4(forwardX, forwardY, playerCoords.z, heading)
+    
+    local success, status, netId = spawnPresetVehicle(source, presetName, coords)
+    
+    if success then
+        TriggerClientEvent('notification', source, 
+            string.format("Spawned %s preset vehicle", presetName:upper())
+        )
+    else
+        TriggerClientEvent('notification', source, "Failed to spawn preset: " .. status)
+    end
+end, true)
+```
+
+### Random Vehicle Spawner
+```lua
+local vehicleCategories = {
+    sports = {"adder", "zentorno", "turismor", "osiris", "t20"},
+    muscle = {"dominator", "gauntlet", "phoenix", "ruiner", "sabregt"},
+    super = {"entity2", "fmj", "reaper", "tempesta", "vagner"},
+    motorcycles = {"bati", "akuma", "ruffian", "pcj", "sanchez"},
+    emergency = {"police", "police2", "ambulance", "firetruk", "sheriff"}
+}
+
+local function spawnRandomVehicle(staffId, category, coords, fullyUpgraded)
+    local vehicles = vehicleCategories[category:lower()]
+    if not vehicles or #vehicles == 0 then
+        return false, "Invalid vehicle category"
+    end
+    
+    -- Select random vehicle from category
+    local randomModel = vehicles[math.random(#vehicles)]
+    
+    -- Create customization based on options
+    local customization = {}
+    
+    if fullyUpgraded then
+        customization.mods = {
+            engine = 4,
+            brakes = 3,
+            transmission = 3,
+            suspension = 2
+        }
+    end
+    
+    -- Random colors
+    customization.color = {
+        primary = {math.random(255), math.random(255), math.random(255)},
+        secondary = {math.random(255), math.random(255), math.random(255)}
+    }
+    
+    local success, status, netId = exports['zyrix_admin']:SpawnVehicle(
+        staffId, 
+        randomModel, 
+        coords, 
+        customization
+    )
+    
+    if success then
+        TriggerClientEvent('notification', staffId, 
+            string.format("Spawned random %s: %s", category, randomModel:upper())
+        )
+    end
+    
+    return success, status, netId
+end
+
+RegisterCommand('randomveh', function(source, args)
+    if #args < 1 then
+        local categories = {}
+        for category, _ in pairs(vehicleCategories) do
+            table.insert(categories, category)
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/randomveh <category> [upgraded]"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Categories]", table.concat(categories, ", ")}
+        })
+        return
+    end
+    
+    local category = args[1]
+    local upgraded = args[2] and args[2]:lower() == "upgraded"
+    
+    local playerPed = GetPlayerPed(source)
+    local playerCoords = GetEntityCoords(playerPed)
+    local heading = GetEntityHeading(playerPed)
+    
+    local coords = vector4(playerCoords.x + 3, playerCoords.y + 3, playerCoords.z, heading)
+    
+    spawnRandomVehicle(source, category, coords, upgraded)
+end, true)
+```
+
+### Vehicle Fleet Management
+```lua
+local vehicleFleets = {}
+
+local function createVehicleFleet(staffId, fleetName, vehicleCount, model, formation)
+    if vehicleFleets[fleetName] then
+        return false, "Fleet name already exists"
+    end
+    
+    local playerPed = GetPlayerPed(staffId)
+    local playerCoords = GetEntityCoords(playerPed)
+    local heading = GetEntityHeading(playerPed)
+    
+    local fleet = {
+        name = fleetName,
+        owner = staffId,
+        vehicles = {},
+        created = os.time()
+    }
+    
+    -- Formation patterns
+    local formations = {
+        line = function(i, spacing)
+            return vector4(
+                playerCoords.x + (i * spacing),
+                playerCoords.y,
+                playerCoords.z,
+                heading
+            )
+        end,
+        circle = function(i, radius)
+            local angle = (i * 360 / vehicleCount) * math.pi / 180
+            return vector4(
+                playerCoords.x + math.cos(angle) * radius,
+                playerCoords.y + math.sin(angle) * radius,
+                playerCoords.z,
+                heading
+            )
+        end,
+        grid = function(i, spacing)
+            local cols = math.ceil(math.sqrt(vehicleCount))
+            local row = math.floor((i - 1) / cols)
+            local col = (i - 1) % cols
+            return vector4(
+                playerCoords.x + (col * spacing),
+                playerCoords.y + (row * spacing),
+                playerCoords.z,
+                heading
+            )
+        end
+    }
+    
+    local formationFunc = formations[formation:lower()] or formations.line
+    local spacing = 3 -- meters between vehicles
+    
+    for i = 1, vehicleCount do
+        local coords = formationFunc(i, spacing)
+        local success, status, netId = exports['zyrix_admin']:SpawnVehicle(staffId, model, coords)
+        
+        if success then
+            table.insert(fleet.vehicles, {
+                netId = netId,
+                model = model,
+                coords = coords,
+                spawned = os.time()
+            })
+        end
+    end
+    
+    vehicleFleets[fleetName] = fleet
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Created fleet '%s' with %d vehicles", fleetName, #fleet.vehicles)
+    )
+    
+    return true, "Fleet created successfully"
+end
+
+local function deleteVehicleFleet(staffId, fleetName)
+    local fleet = vehicleFleets[fleetName]
+    if not fleet then
+        return false, "Fleet not found"
+    end
+    
+    if fleet.owner ~= staffId then
+        -- Check if staff has permission to delete other's fleets
+        if not exports['zyrix_admin']:HasPermission(staffId, 'admin') then
+            return false, "You can only delete your own fleets"
+        end
+    end
+    
+    -- Delete all vehicles in fleet
+    local deleted = 0
+    for _, vehicle in ipairs(fleet.vehicles) do
+        local success = exports['zyrix_admin']:DeleteVehicle(staffId, vehicle.netId)
+        if success then
+            deleted = deleted + 1
+        end
+    end
+    
+    vehicleFleets[fleetName] = nil
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Deleted fleet '%s' (%d vehicles removed)", fleetName, deleted)
+    )
+    
+    return true, "Fleet deleted successfully"
+end
+
+RegisterCommand('createfleet', function(source, args)
+    if #args < 4 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/createfleet <name> <count> <model> <formation>"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Formations]", "line, circle, grid"}
+        })
+        return
+    end
+    
+    local fleetName = args[1]
+    local vehicleCount = tonumber(args[2])
+    local model = args[3]
+    local formation = args[4]
+    
+    if not vehicleCount or vehicleCount <= 0 or vehicleCount > 20 then
+        TriggerClientEvent('notification', source, "Vehicle count must be between 1-20")
+        return
+    end
+    
+    createVehicleFleet(source, fleetName, vehicleCount, model, formation)
+end, true)
+
+RegisterCommand('deletefleet', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/deletefleet <name>"}
+        })
+        return
+    end
+    
+    local fleetName = args[1]
+    deleteVehicleFleet(source, fleetName)
+end, true)
+
+RegisterCommand('listfleets', function(source, args)
+    local fleetNames = {}
+    for name, fleet in pairs(vehicleFleets) do
+        table.insert(fleetNames, string.format("%s (%d vehicles)", name, #fleet.vehicles))
+    end
+    
+    if #fleetNames > 0 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Active Fleets]", table.concat(fleetNames, ", ")}
+        })
+    else
+        TriggerClientEvent('notification', source, "No active fleets")
+    end
+end, true)
+```
+
+## Error Handling
+
+```lua
+local function safeSpawnVehicle(staffId, model, coords, customization)
+    -- Validate model
+    if not model then
+        return false, "Vehicle model not specified"
+    end
+    
+    -- Convert model to hash if it's a string
+    local modelHash = type(model) == "string" and GetHashKey(model) or model
+    
+    -- Validate model exists
+    if not IsModelValid(modelHash) or not IsModelAVehicle(modelHash) then
+        return false, "Invalid vehicle model"
+    end
+    
+    -- Validate coordinates
+    if not coords or type(coords) ~= "vector4" then
+        return false, "Invalid coordinates provided"
+    end
+    
+    -- Check spawn location is clear
+    local vehicles = GetVehiclesInArea(coords.xyz, 5.0)
+    if #vehicles > 0 then
+        return false, "Spawn location blocked by other vehicles"
+    end
+    
+    -- Validate customization
+    if customization then
+        if customization.plate and string.len(customization.plate) > 8 then
+            customization.plate = string.sub(customization.plate, 1, 8)
+        end
+        
+        if customization.color then
+            -- Validate color values
+            local function validateColor(color)
+                if color and type(color) == "table" then
+                    color[1] = math.max(0, math.min(255, color[1] or 255))
+                    color[2] = math.max(0, math.min(255, color[2] or 255))
+                    color[3] = math.max(0, math.min(255, color[3] or 255))
+                end
+            end
+            
+            validateColor(customization.color.primary)
+            validateColor(customization.color.secondary)
+        end
+    end
+    
+    -- Attempt to spawn vehicle
+    local success, status, netId = exports['zyrix_admin']:SpawnVehicle(staffId, model, coords, customization)
+    
+    if success then
+        print(string.format("[VEHICLE SPAWN] %s spawned %s at %.2f, %.2f, %.2f", 
+              GetPlayerName(staffId), model, coords.x, coords.y, coords.z))
+    end
+    
+    return success, status, netId
+end
+```
+
+<Tip>
+  Use vehicle presets and fleet management systems to streamline common spawning tasks and maintain consistency in your server events.
+</Tip>

@@ -1,0 +1,294 @@
+---
+title: "Teleportation Functions"
+description: "Control player positioning with comprehensive teleportation capabilities"
+---
+
+## Overview
+
+The Zyrix API provides powerful teleportation functions for moving players around your server. All teleportation functions include permission checking and support coordinate validation.
+
+## TeleportPlayer
+
+Teleport a player to specific coordinates.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member performing the action
+- `targetId` (number) - Server ID of the player to teleport  
+- `coords` (vector4) - Target coordinates with heading `vector4(x, y, z, heading)`
+
+### Returns
+- `success` (boolean) - Whether the teleportation succeeded
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'invalid_target'`
+
+### Example
+```lua
+-- Teleport player to Legion Square
+local coords = vector4(-265.0, -963.6, 31.2, 200.0)
+local success, status = exports['zyrix_admin']:TeleportPlayer(source, targetId, coords)
+
+if success then
+    print("Player teleported successfully")
+else
+    print("Teleport failed:", status)
+end
+```
+
+## BringPlayer
+
+Bring a target player to the staff member's location.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:BringPlayer(staffId, targetId)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `targetId` (number) - Server ID of the player to bring
+
+### Returns
+- `success` (boolean) - Whether the bring action succeeded
+- `status` (string) - Status code
+
+### Example
+```lua
+-- Bring player to staff location
+local success, status = exports['zyrix_admin']:BringPlayer(source, targetId)
+
+if success then
+    TriggerClientEvent('chat:addMessage', source, {
+        color = {0, 255, 0},
+        multiline = false,
+        args = {"[Admin]", string.format("Brought %s to you", GetPlayerName(targetId))}
+    })
+end
+```
+
+## TeleportToPlayer
+
+Teleport staff member to a target player's location.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:TeleportToPlayer(staffId, targetId)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member to teleport
+- `targetId` (number) - Server ID of the target player
+
+### Returns  
+- `success` (boolean) - Whether the teleportation succeeded
+- `status` (string) - Status code
+
+### Example
+```lua
+-- Teleport to player location
+local success, status = exports['zyrix_admin']:TeleportToPlayer(source, targetId)
+
+if success then
+    TriggerClientEvent('notification', source, 
+        string.format("Teleported to %s", GetPlayerName(targetId))
+    )
+end
+```
+
+## Advanced Examples
+
+### Bulk Player Teleportation
+```lua
+local function teleportMultiplePlayers(staffId, playerIds, coords)
+    local results = {}
+    
+    for _, playerId in ipairs(playerIds) do
+        local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, playerId, coords)
+        results[playerId] = {success = success, status = status}
+        
+        if success then
+            print(string.format("Teleported player %d", playerId))
+        else
+            print(string.format("Failed to teleport player %d: %s", playerId, status))
+        end
+    end
+    
+    return results
+end
+
+-- Usage: Teleport all online players to event location
+local eventCoords = vector4(0.0, 0.0, 100.0, 0.0)
+local allPlayers = GetPlayers()
+local results = teleportMultiplePlayers(source, allPlayers, eventCoords)
+```
+
+### Safe Teleportation with Validation
+```lua
+local function safeTeleport(staffId, targetId, x, y, z, heading)
+    -- Validate coordinates
+    if not x or not y or not z then
+        return false, "Invalid coordinates provided"
+    end
+    
+    -- Check if coordinates are within bounds (example bounds)
+    if x < -4000 or x > 4000 or y < -4000 or y > 4000 then
+        return false, "Coordinates out of world bounds"
+    end
+    
+    -- Create vector4 with default heading if not provided
+    local coords = vector4(x, y, z, heading or 0.0)
+    
+    -- Attempt teleportation
+    local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+    
+    if success then
+        -- Log successful teleportation
+        print(string.format("[TELEPORT] %s teleported %s to %.2f, %.2f, %.2f", 
+              GetPlayerName(staffId), GetPlayerName(targetId), x, y, z))
+    end
+    
+    return success, status
+end
+```
+
+### Teleportation with Confirmation
+```lua
+-- Server-side event handler
+RegisterServerEvent('admin:requestTeleport')
+AddEventHandler('admin:requestTeleport', function(targetId, coords)
+    local staffId = source
+    
+    -- Confirm teleportation with target player
+    TriggerClientEvent('admin:confirmTeleport', targetId, staffId, coords)
+end)
+
+RegisterServerEvent('admin:confirmTeleportResponse')
+AddEventHandler('admin:confirmTeleportResponse', function(staffId, coords, accepted)
+    local targetId = source
+    
+    if accepted then
+        local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+        
+        if success then
+            TriggerClientEvent('notification', staffId, "Player accepted teleportation")
+            TriggerClientEvent('notification', targetId, "You have been teleported")
+        else
+            TriggerClientEvent('notification', staffId, "Teleportation failed: " .. status)
+        end
+    else
+        TriggerClientEvent('notification', staffId, "Player declined teleportation")
+    end
+end)
+```
+
+### Teleportation History Tracking
+```lua
+local teleportHistory = {}
+
+local function logTeleportation(staffId, targetId, coords, success, status)
+    local entry = {
+        timestamp = os.time(),
+        staffName = GetPlayerName(staffId),
+        targetName = GetPlayerName(targetId),
+        coordinates = coords,
+        success = success,
+        status = status
+    }
+    
+    table.insert(teleportHistory, entry)
+    
+    -- Keep only last 100 entries
+    if #teleportHistory > 100 then
+        table.remove(teleportHistory, 1)
+    end
+end
+
+-- Enhanced teleport function with logging
+local function teleportPlayerWithLog(staffId, targetId, coords)
+    local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+    logTeleportation(staffId, targetId, coords, success, status)
+    return success, status
+end
+```
+
+## Common Use Cases
+
+### Event Management
+```lua
+-- Teleport all players to event start location
+local function startEvent(staffId, eventCoords)
+    local players = GetPlayers()
+    local teleported = 0
+    
+    for _, playerId in ipairs(players) do
+        local success = exports['zyrix_admin']:TeleportPlayer(staffId, playerId, eventCoords)
+        if success then
+            teleported = teleported + 1
+        end
+    end
+    
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {255, 215, 0},
+        multiline = false,
+        args = {"[Event]", string.format("Event started! %d players teleported", teleported)}
+    })
+end
+```
+
+### Quick Travel System
+```lua
+local quickTravelLocations = {
+    ["lspd"] = vector4(425.1, -979.5, 30.7, 90.0),
+    ["hospital"] = vector4(307.7, -1433.5, 29.8, 142.0),
+    ["airport"] = vector4(-1037.8, -2737.6, 20.1, 330.0),
+    ["sandy"] = vector4(1960.1, 3740.0, 32.3, 300.0)
+}
+
+RegisterCommand('goto', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/goto <location>"}
+        })
+        return
+    end
+    
+    local location = string.lower(args[1])
+    local coords = quickTravelLocations[location]
+    
+    if coords then
+        local success = exports['zyrix_admin']:TeleportPlayer(source, source, coords)
+        if success then
+            TriggerClientEvent('notification', source, "Teleported to " .. location)
+        end
+    else
+        TriggerClientEvent('notification', source, "Location not found")
+    end
+end, true) -- Restricted command
+```
+
+<Tip>
+  Always validate coordinates before teleportation to prevent players from being teleported to invalid locations or outside the game world.
+</Tip>
+
+## Error Handling
+
+Common error scenarios and how to handle them:
+
+```lua
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+if not success then
+    if status == 'no_permission' then
+        TriggerClientEvent('notification', staffId, 'You cannot teleport players')
+    elseif status == 'player_not_found' then
+        TriggerClientEvent('notification', staffId, 'Target player not found')
+    elseif status == 'invalid_target' then
+        TriggerClientEvent('notification', staffId, 'Invalid player ID')
+    else
+        TriggerClientEvent('notification', staffId, 'Teleportation failed: ' .. status)
+    end
+end
+```

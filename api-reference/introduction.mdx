@@ -1,14 +1,108 @@
 ---
-title: "Zyrix API"
-description: "Zyrix has a lot of useful exports and API you can utilize to further manage your server!"
+title: "Zyrix Admin API"
+description: "Comprehensive API documentation for integrating with the Zyrix Admin system"
 ---
 
+## Overview
+
+The Zyrix Admin API provides a powerful interface for programmatically managing your FiveM server. With over 40+ functions covering player management, moderation, vehicle control, staff tools, and server administration, you can build custom integrations and extend your server's functionality.
+
+<Info>
+  All API functions include built-in permission checking and return consistent response patterns for reliable integration.
+</Info>
+
+## Quick Start
+
+### Basic Usage
+
+```lua
+-- Method 1: Direct exports (recommended)
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+-- Method 2: Full API object
+local ZyrixAPI = exports['zyrix_admin']:GetAPI()
+local success, status = ZyrixAPI.TeleportPlayer(staffId, targetId, coords)
+```
+
+### Response Pattern
+
+All API functions return a consistent tuple format:
+
+```lua
+local success, status, data = exports['zyrix_admin']:FunctionName(params)
+```
+
+- `success` (boolean) - Whether the operation completed successfully
+- `status` (string) - Status code: 'success', 'no_permission', 'invalid_target', 'player_not_found', etc.
+- `data` (optional) - Additional data returned by specific functions
+
+## API Categories
+
+### 🎮 Player Management
+Control player positioning, health, and state with teleportation, healing, freezing, and revival functions.
+
+### ⚖️ Moderation
+Issue warnings, kicks, and bans with comprehensive logging and webhook integration.
+
+### 🚗 Vehicle Management
+Spawn, delete, repair, and manage vehicles with advanced customization options.
+
+### 👁️ Staff Tools
+Spectate players, enable noclip, control visibility, and access other administrative tools.
+
+### 🖥️ Server Management
+Take screenshots, make announcements, capture player snapshots, and control server restarts.
+
+## Permission System
+
+All functions automatically check staff permissions based on your Zyrix configuration:
+
+```lua
+-- Example: Only staff with 'ban' permission can use BanPlayer
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+-- Returns: success=false, status='no_permission' if insufficient permissions
+```
+
+## Error Handling
+
+Always check the success status and handle errors appropriately:
+
+```lua
+local success, status, data = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+if not success then
+    if status == 'no_permission' then
+        print('Staff member lacks teleport permissions')
+    elseif status == 'player_not_found' then
+        print('Target player is not online')
+    elseif status == 'invalid_target' then
+        print('Invalid player ID provided')
+    else
+        print('Teleport failed:', status)
+    end
+    return
+end
+
+print('Player teleported successfully!')
+```
+
+## Webhooks & Logging
+
+Most administrative actions automatically trigger:
+- Discord webhook notifications (if configured)
+- Server console logging
+- Action history recording
+
 <Warning>
-  If you are not a developer or don't know what you're doing, I recommend not visiting this page
-  and instead reaching out to an experienced developer who can help you utilize our API.
+  These API functions perform real administrative actions on your server. Always validate permissions and input parameters before calling them in production environments.
 </Warning>
 
-## Welcome
-With Zyrix we try and make all server owners as easy as possible, so we have many different exports
-and API features you can utilize straight in your server. If you have any questions or need further
-explanation, you can contact us on [Discord](https://discord.gg/zyrix).
+## Need Help?
+
+- Join our [Discord](https://discord.gg/zyrix) for development support
+- Check the individual function documentation for detailed usage examples
+- Review the error handling section for troubleshooting common issues
+
+---
+
+Ready to get started? Choose a category from the sidebar to explore specific functions and see detailed code examples.

@@ -1,0 +1,91 @@
+---
+title: "Delete Vehicle"
+description: "Remove vehicles from the server with comprehensive cleanup and validation"
+---
+
+## DeleteVehicle
+
+Remove a vehicle from the server by its network ID.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:DeleteVehicle(staffId, vehicleNetId)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `vehicleNetId` (number) - Network ID of the vehicle to delete
+
+### Example
+```lua
+local success, status = exports['zyrix_admin']:DeleteVehicle(source, vehicleNetId)
+
+if success then
+    TriggerClientEvent('notification', source, "Vehicle deleted successfully")
+else
+    TriggerClientEvent('notification', source, "Failed to delete vehicle: " .. status)
+end
+```
+
+## RepairVehicle
+
+Fully repair a vehicle's damage and restore all components.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:RepairVehicle(staffId, vehicleNetId)
+```
+
+### Example
+```lua
+local success, status = exports['zyrix_admin']:RepairVehicle(source, vehicleNetId)
+
+if success then
+    TriggerClientEvent('notification', source, "Vehicle repaired successfully")
+end
+```
+
+## Advanced Examples
+
+### Smart Vehicle Cleanup
+```lua
+local function cleanupAbandonedVehicles(staffId, maxAgeMinutes)
+    local allVehicles = GetAllVehicles()
+    local cleaned = 0
+    local currentTime = os.time()
+    
+    for _, vehicle in ipairs(allVehicles) do
+        local netId = NetworkGetNetworkIdFromEntity(vehicle)
+        local lastDriver = GetLastDriverOfVehicle(vehicle)
+        
+        -- Check if vehicle has been abandoned
+        if not lastDriver or not GetPlayerName(lastDriver) then
+            local vehicleAge = GetVehicleAge(vehicle) -- Custom function
+            
+            if vehicleAge and vehicleAge > (maxAgeMinutes * 60) then
+                local success = exports['zyrix_admin']:DeleteVehicle(staffId, netId)
+                if success then
+                    cleaned = cleaned + 1
+                end
+            end
+        end
+    end
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Cleaned up %d abandoned vehicles", cleaned)
+    )
+    
+    return cleaned
+end
+
+RegisterCommand('cleanvehicles', function(source, args)
+    local maxAge = tonumber(args[1]) or 30 -- Default 30 minutes
+    
+    if maxAge < 5 or maxAge > 120 then
+        TriggerClientEvent('notification', source, "Age must be between 5-120 minutes")
+        return
+    end
+    
+    cleanupAbandonedVehicles(source, maxAge)
+end, true)
+```

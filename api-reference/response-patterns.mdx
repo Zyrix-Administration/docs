@@ -1,0 +1,156 @@
+---
+title: "Response Patterns"
+description: "Understanding the consistent response format across all Zyrix API functions"
+---
+
+## Standard Response Format
+
+All Zyrix API functions return a consistent tuple pattern:
+
+```lua
+local success, status, data = exports['zyrix_admin']:FunctionName(parameters)
+```
+
+## Response Components
+
+### Success (Boolean)
+Indicates whether the operation completed successfully:
+
+```lua
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+if success then
+    print("Operation completed successfully")
+else
+    print("Operation failed:", status)
+end
+```
+
+### Status (String)
+Provides specific information about the operation result:
+
+#### Success Status Codes
+- `'success'` - Operation completed successfully
+- `'completed'` - Alternative success indicator for some functions
+
+#### Error Status Codes
+- `'no_permission'` - Staff member lacks required permissions
+- `'invalid_staff'` - Invalid staff ID or staff member not found
+- `'invalid_target'` - Invalid target player ID
+- `'player_not_found'` - Target player is not online
+- `'player_not_connected'` - Player has disconnected
+- `'insufficient_rank'` - Staff rank too low for action
+- `'already_banned'` - Player is already banned (ban functions)
+- `'not_banned'` - Player is not banned (unban functions)
+- `'invalid_duration'` - Invalid time duration specified
+- `'rate_limited'` - Action blocked due to rate limiting
+- `'system_error'` - Internal system error occurred
+
+### Data (Optional)
+Some functions return additional data as the third parameter:
+
+```lua
+local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+
+if success then
+    print(string.format("Player has %d warnings", #warnings))
+    for i, warning in ipairs(warnings) do
+        print(string.format("Warning %d: %s", i, warning.reason))
+    end
+end
+```
+
+## Response Examples
+
+### Simple Success Response
+```lua
+local success, status = exports['zyrix_admin']:HealPlayer(staffId, targetId)
+-- Returns: true, 'success'
+```
+
+### Error Response
+```lua
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, 999, 3600, "Cheating")
+-- Returns: false, 'player_not_found'
+```
+
+### Response with Data
+```lua
+local success, status, screenshot = exports['zyrix_admin']:TakeScreenshot(staffId, targetId)
+-- Returns: true, 'success', {url = 'https://...', timestamp = 1234567890}
+```
+
+## Best Practices
+
+### 1. Always Check Success Status
+Never assume an operation succeeded without checking:
+
+```lua
+local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+
+if not success then
+    print("Kick failed:", status)
+    return
+end
+
+print("Player kicked successfully")
+```
+
+### 2. Handle Specific Error Cases
+Provide appropriate responses for different error scenarios:
+
+```lua
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+if not success then
+    if status == 'no_permission' then
+        TriggerClientEvent('notification', staffId, 'You cannot teleport players')
+    elseif status == 'player_not_found' then
+        TriggerClientEvent('notification', staffId, 'Player not found')
+    else
+        TriggerClientEvent('notification', staffId, 'Teleport failed: ' .. status)
+    end
+    return
+end
+
+TriggerClientEvent('notification', staffId, 'Player teleported successfully')
+```
+
+### 3. Use Data When Available
+Extract and use returned data appropriately:
+
+```lua
+local success, status, playerData = exports['zyrix_admin']:GetPlayerInfo(targetId)
+
+if success and playerData then
+    print(string.format("Player: %s (ID: %d)", playerData.name, playerData.id))
+    print(string.format("Warnings: %d | Bans: %d", playerData.warnings, playerData.bans))
+end
+```
+
+## Function-Specific Patterns
+
+### Moderation Functions
+```lua
+-- Standard moderation response
+local success, status = exports['zyrix_admin']:WarnPlayer(staffId, targetId, reason)
+-- Returns: boolean success, string status
+```
+
+### Data Retrieval Functions
+```lua
+-- Functions that return data
+local success, status, data = exports['zyrix_admin']:FetchWarnings(targetId)
+-- Returns: boolean success, string status, table data
+```
+
+### Toggle Functions
+```lua
+-- Functions with toggle behavior
+local success, status, newState = exports['zyrix_admin']:FreezePlayer(staffId, targetId)
+-- Returns: boolean success, string status, boolean newState
+```
+
+<Tip>
+  Consistent response patterns make it easier to build robust integrations. Always handle both success and error cases in your code.
+</Tip>

@@ -40,21 +40,57 @@
         "tab": "API reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Getting Started",
             "pages": [
-              "api-reference/introduction"
+              "api-reference/introduction",
+              "api-reference/authentication",
+              "api-reference/response-patterns",
+              "api-reference/error-handling"
             ]
           },
           {
-            "group": "Exports",
+            "group": "Player Management",
             "pages": [
-              "api-reference/uses/ban-player",
-              "api-reference/uses/checkBanSrc",
-              "api-reference/uses/fetchWarnings",
-              "api-reference/uses/kickPlayer",
-              "api-reference/uses/snapshotPlayers",
-              "api-reference/uses/unban-player",
-              "api-reference/uses/warnPlayer"
+              "api-reference/player/teleport-functions",
+              "api-reference/player/health-functions",
+              "api-reference/player/state-functions"
+            ]
+          },
+          {
+            "group": "Moderation",
+            "pages": [
+              "api-reference/moderation/warn-player",
+              "api-reference/moderation/kick-player",
+              "api-reference/moderation/ban-player",
+              "api-reference/moderation/unban-player",
+              "api-reference/moderation/fetch-warnings",
+              "api-reference/moderation/check-ban"
+            ]
+          },
+          {
+            "group": "Vehicle Management",
+            "pages": [
+              "api-reference/vehicles/spawn-vehicle",
+              "api-reference/vehicles/delete-vehicle",
+              "api-reference/vehicles/repair-vehicle",
+              "api-reference/vehicles/manage-vehicles"
+            ]
+          },
+          {
+            "group": "Staff Tools",
+            "pages": [
+              "api-reference/staff/spectate-functions",
+              "api-reference/staff/noclip-functions",
+              "api-reference/staff/visibility-functions"
+            ]
+          },
+          {
+            "group": "Server Management",
+            "pages": [
+              "api-reference/server/announcements",
+              "api-reference/server/screenshots",
+              "api-reference/server/snapshots",
+              "api-reference/server/restart"
             ]
           }
         ]

@@ -1,0 +1,475 @@
+---
+title: "Fetch Warnings"
+description: "Retrieve and analyze player warning history with comprehensive filtering options"
+---
+
+## Overview
+
+The `FetchWarnings` function retrieves a player's complete warning history, allowing staff to make informed moderation decisions based on past behavior.
+
+## FetchWarnings
+
+Retrieve all warnings issued to a specific player.
+
+### Syntax
+```lua
+local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+```
+
+### Parameters
+- `targetId` (number) - Server ID of the player whose warnings to fetch
+
+### Returns
+- `success` (boolean) - Whether the fetch operation succeeded
+- `status` (string) - Status code: `'success'`, `'player_not_found'`, `'no_warnings'`
+- `warnings` (table) - Array of warning objects
+
+### Warning Object Structure
+```lua
+{
+    id = 123,                    -- Warning ID
+    playerId = 456,              -- Target player ID
+    playerName = "PlayerName",   -- Player name at time of warning
+    staffId = 789,               -- Staff member who issued warning
+    staffName = "AdminName",     -- Staff name at time of warning
+    reason = "Breaking rules",   -- Warning reason
+    timestamp = 1640995200,      -- Unix timestamp
+    date = "2021-12-31 12:00:00" -- Formatted date
+}
+```
+
+### Example
+```lua
+local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+
+if success and warnings then
+    print(string.format("Player has %d warnings:", #warnings))
+    
+    for i, warning in ipairs(warnings) do
+        print(string.format("%d. %s - %s (by %s)", 
+              i, warning.date, warning.reason, warning.staffName))
+    end
+else
+    print("No warnings found or error occurred:", status)
+end
+```
+
+## Advanced Examples
+
+### Warning History Display System
+```lua
+local function displayPlayerWarnings(staffId, targetId, detailed)
+    local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+    
+    if not success then
+        TriggerClientEvent('notification', staffId, "Failed to fetch warnings: " .. status)
+        return
+    end
+    
+    if not warnings or #warnings == 0 then
+        TriggerClientEvent('notification', staffId, 
+            string.format("%s has no warnings", GetPlayerName(targetId))
+        )
+        return
+    end
+    
+    -- Sort warnings by date (newest first)
+    table.sort(warnings, function(a, b) return a.timestamp > b.timestamp end)
+    
+    -- Display summary
+    TriggerClientEvent('chat:addMessage', staffId, {
+        color = {255, 165, 0},
+        multiline = false,
+        args = {"[Warning History]", string.format("%s has %d warnings", 
+               GetPlayerName(targetId), #warnings)}
+    })
+    
+    if detailed then
+        -- Show detailed warning list
+        for i, warning in ipairs(warnings) do
+            if i <= 10 then -- Limit to last 10 warnings
+                TriggerClientEvent('chat:addMessage', staffId, {
+                    args = {string.format("[%d]", i), 
+                           string.format("%s: %s (by %s)", 
+                           warning.date, warning.reason, warning.staffName)}
+                })
+            end
+        end
+        
+        if #warnings > 10 then
+            TriggerClientEvent('chat:addMessage', staffId, {
+                args = {"[...]", string.format("and %d more warnings", #warnings - 10)}
+            })
+        end
+    else
+        -- Show recent warnings only
+        local recentCount = 0
+        local currentTime = os.time()
+        
+        for _, warning in ipairs(warnings) do
+            if (currentTime - warning.timestamp) <= 604800 then -- Last 7 days
+                recentCount = recentCount + 1
+            end
+        end
+        
+        TriggerClientEvent('chat:addMessage', staffId, {
+            args = {"[Recent]", string.format("%d warnings in the last 7 days", recentCount)}
+        })
+        
+        -- Show last 3 warnings
+        for i = 1, math.min(3, #warnings) do
+            local warning = warnings[i]
+            TriggerClientEvent('chat:addMessage', staffId, {
+                args = {string.format("[%d]", i), 
+                       string.format("%s: %s", warning.date, warning.reason)}
+            })
+        end
+    end
+end
+
+-- Commands for warning display
+RegisterCommand('warnings', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/warnings <player_id> [detailed]"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local detailed = args[2] and args[2]:lower() == "detailed"
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    displayPlayerWarnings(source, targetId, detailed)
+end, true)
+```
+
+### Warning Analysis System
+```lua
+local warningAnalyzer = {}
+
+function warningAnalyzer.analyzePattern(warnings)
+    if not warnings or #warnings == 0 then
+        return {
+            riskLevel = "none",
+            pattern = "clean",
+            recommendations = {}
+        }
+    end
+    
+    local analysis = {
+        total = #warnings,
+        categories = {},
+        timePattern = {},
+        staffPattern = {},
+        riskLevel = "low",
+        pattern = "unknown",
+        recommendations = {}
+    }
+    
+    local currentTime = os.time()
+    local recentWarnings = 0
+    local categoryCount = {}
+    local staffCount = {}
+    local timeIntervals = {}
+    
+    -- Analyze warnings
+    for i, warning in ipairs(warnings) do
+        -- Count recent warnings (last 30 days)
+        if (currentTime - warning.timestamp) <= 2592000 then
+            recentWarnings = recentWarnings + 1
+        end
+        
+        -- Extract categories from reason
+        local category = warning.reason:match("%[(.-)%]")
+        if category then
+            categoryCount[category] = (categoryCount[category] or 0) + 1
+        end
+        
+        -- Track staff members issuing warnings
+        staffCount[warning.staffName] = (staffCount[warning.staffName] or 0) + 1
+        
+        -- Calculate time intervals between warnings
+        if i > 1 then
+            local interval = warnings[i-1].timestamp - warning.timestamp
+            table.insert(timeIntervals, interval)
+        end
+    end
+    
+    analysis.categories = categoryCount
+    analysis.staffPattern = staffCount
+    analysis.recentCount = recentWarnings
+    
+    -- Determine risk level
+    if analysis.total >= 10 or recentWarnings >= 5 then
+        analysis.riskLevel = "high"
+    elseif analysis.total >= 5 or recentWarnings >= 3 then
+        analysis.riskLevel = "medium"
+    else
+        analysis.riskLevel = "low"
+    end
+    
+    -- Analyze patterns
+    if recentWarnings >= 3 and #timeIntervals > 0 then
+        local avgInterval = 0
+        for _, interval in ipairs(timeIntervals) do
+            avgInterval = avgInterval + interval
+        end
+        avgInterval = avgInterval / #timeIntervals
+        
+        if avgInterval < 86400 then -- Less than 1 day between warnings
+            analysis.pattern = "escalating"
+            table.insert(analysis.recommendations, "Consider immediate intervention")
+        elseif avgInterval < 604800 then -- Less than 1 week
+            analysis.pattern = "recurring"
+            table.insert(analysis.recommendations, "Monitor closely for repeat behavior")
+        else
+            analysis.pattern = "occasional"
+        end
+    elseif analysis.total <= 2 then
+        analysis.pattern = "minor"
+    else
+        analysis.pattern = "stable"
+    end
+    
+    -- Category-specific recommendations
+    for category, count in pairs(categoryCount) do
+        if count >= 3 then
+            table.insert(analysis.recommendations, 
+                        string.format("Multiple %s violations - consider specialized training", category))
+        end
+    end
+    
+    return analysis
+end
+
+function warningAnalyzer.generateReport(targetId)
+    local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+    
+    if not success then
+        return nil, "Failed to fetch warnings: " .. status
+    end
+    
+    local analysis = warningAnalyzer.analyzePattern(warnings)
+    analysis.playerName = GetPlayerName(targetId)
+    analysis.playerId = targetId
+    analysis.reportTime = os.time()
+    
+    return analysis, "success"
+end
+
+RegisterCommand('warnreport', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/warnreport <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    local analysis, status = warningAnalyzer.generateReport(targetId)
+    
+    if not analysis then
+        TriggerClientEvent('notification', source, status)
+        return
+    end
+    
+    -- Display analysis results
+    TriggerClientEvent('chat:addMessage', source, {
+        color = {0, 255, 255},
+        args = {"[Warning Analysis]", string.format("%s - Risk: %s, Pattern: %s", 
+               analysis.playerName, analysis.riskLevel:upper(), analysis.pattern:upper())}
+    })
+    
+    TriggerClientEvent('chat:addMessage', source, {
+        args = {"[Statistics]", string.format("Total: %d, Recent (30d): %d", 
+               analysis.total, analysis.recentCount)}
+    })
+    
+    if next(analysis.categories) then
+        local categoryText = {}
+        for category, count in pairs(analysis.categories) do
+            table.insert(categoryText, string.format("%s: %d", category, count))
+        end
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Categories]", table.concat(categoryText, ", ")}
+        })
+    end
+    
+    if #analysis.recommendations > 0 then
+        for _, recommendation in ipairs(analysis.recommendations) do
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Recommendation]", recommendation}
+            })
+        end
+    end
+end, true)
+```
+
+### Warning Search and Filter System
+```lua
+local warningSearch = {}
+
+function warningSearch.filterWarnings(warnings, filters)
+    local filtered = {}
+    
+    for _, warning in ipairs(warnings) do
+        local includeWarning = true
+        
+        -- Date range filter
+        if filters.startDate and warning.timestamp < filters.startDate then
+            includeWarning = false
+        end
+        if filters.endDate and warning.timestamp > filters.endDate then
+            includeWarning = false
+        end
+        
+        -- Staff filter
+        if filters.staffName and not string.find(warning.staffName:lower(), filters.staffName:lower()) then
+            includeWarning = false
+        end
+        
+        -- Reason filter
+        if filters.reasonKeyword and not string.find(warning.reason:lower(), filters.reasonKeyword:lower()) then
+            includeWarning = false
+        end
+        
+        -- Category filter
+        if filters.category then
+            local warningCategory = warning.reason:match("%[(.-)%]")
+            if not warningCategory or warningCategory:lower() ~= filters.category:lower() then
+                includeWarning = false
+            end
+        end
+        
+        if includeWarning then
+            table.insert(filtered, warning)
+        end
+    end
+    
+    return filtered
+end
+
+RegisterCommand('searchwarnings', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/searchwarnings <player_id> <filter_type>:<value>"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Filters]", "staff:<name>, reason:<keyword>, category:<type>, days:<number>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    -- Parse filters
+    local filters = {}
+    for i = 2, #args do
+        local filterArg = args[i]
+        local filterType, filterValue = filterArg:match("(.-):(.*)")
+        
+        if filterType and filterValue then
+            if filterType == "staff" then
+                filters.staffName = filterValue
+            elseif filterType == "reason" then
+                filters.reasonKeyword = filterValue
+            elseif filterType == "category" then
+                filters.category = filterValue
+            elseif filterType == "days" then
+                local days = tonumber(filterValue)
+                if days then
+                    filters.startDate = os.time() - (days * 86400)
+                end
+            end
+        end
+    end
+    
+    local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+    
+    if not success or not warnings then
+        TriggerClientEvent('notification', source, "Failed to fetch warnings")
+        return
+    end
+    
+    local filtered = warningSearch.filterWarnings(warnings, filters)
+    
+    if #filtered == 0 then
+        TriggerClientEvent('notification', source, "No warnings match the specified filters")
+        return
+    end
+    
+    TriggerClientEvent('chat:addMessage', source, {
+        args = {"[Filtered Results]", string.format("Found %d matching warnings out of %d total", 
+               #filtered, #warnings)}
+    })
+    
+    for i, warning in ipairs(filtered) do
+        if i <= 5 then -- Show first 5 results
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {string.format("[%d]", i), 
+                       string.format("%s: %s (by %s)", 
+                       warning.date, warning.reason, warning.staffName)}
+            })
+        end
+    end
+    
+    if #filtered > 5 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[...]", string.format("and %d more warnings", #filtered - 5)}
+        })
+    end
+end, true)
+```
+
+## Error Handling
+
+```lua
+local function safeFetchWarnings(targetId)
+    -- Validate player ID
+    if not targetId or type(targetId) ~= 'number' then
+        return false, "Invalid player ID"
+    end
+    
+    if not GetPlayerName(targetId) then
+        return false, "Player not found"
+    end
+    
+    -- Fetch warnings
+    local success, status, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+    
+    if not success then
+        local errorMessages = {
+            player_not_found = "Player not found in warning database",
+            no_warnings = "Player has no warnings",
+            database_error = "Database connection failed"
+        }
+        
+        local message = errorMessages[status] or ("Warning fetch failed: " .. status)
+        return false, message
+    end
+    
+    return true, warnings
+end
+```
+
+<Info>
+  Warning history is valuable for making informed moderation decisions. Consider both the quantity and recency of warnings when determining appropriate actions.
+</Info>
+
+<Tip>
+  Use warning analysis tools to identify patterns in player behavior and implement targeted interventions before escalation becomes necessary.
+</Tip>

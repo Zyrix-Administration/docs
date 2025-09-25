@@ -1,0 +1,380 @@
+---
+title: "Server Restart Functions"
+description: "Manage server restarts with scheduling, warnings, and safe shutdown procedures"
+---
+
+## RestartServer
+
+Initiate a server restart with customizable timing and notification options.
+
+<Warning>
+Server restarts will disconnect all players. Always provide adequate warning time and ensure important operations are completed first.
+</Warning>
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:RestartServer(staffId, delay, options)
+```
+
+### Parameters
+- `staffId` (number): ID of the staff member initiating the restart
+- `delay` (number): Delay before restart in seconds (minimum 30 seconds)
+- `options` (table): Restart configuration options
+
+### Options
+```lua
+{
+    reason = "maintenance",        -- Restart reason
+    warningIntervals = {600, 300, 120, 60, 30, 10}, -- Warning times in seconds
+    saveData = true,              -- Save all player data before restart
+    gracefulShutdown = true,      -- Wait for ongoing operations
+    notifyDiscord = true,         -- Send Discord notifications
+    backupDatabase = false,       -- Create database backup
+    customMessage = nil,          -- Custom restart message
+    forceRestart = false          -- Force restart without warnings
+}
+```
+
+### Return Values
+- `success` (boolean): Whether the restart was initiated successfully
+- `status` (string): Status message or error description
+
+### Example
+```lua
+local options = {
+    reason = "weekly_maintenance",
+    warningIntervals = {1800, 900, 300, 60, 10}, -- 30min, 15min, 5min, 1min, 10sec
+    saveData = true,
+    notifyDiscord = true,
+    customMessage = "Weekly maintenance restart - Server will be back online in 15 minutes"
+}
+
+local success, status = exports['zyrix_admin']:RestartServer(source, 1800, options) -- 30 minute delay
+
+if success then
+    print("Server restart scheduled successfully")
+else
+    print("Failed to schedule restart: " .. status)
+end
+```
+
+## Advanced Examples
+
+### Smart Restart Scheduling System
+```lua
+local restartSchedule = {
+    daily = {
+        enabled = true,
+        times = {"06:00", "18:00"}, -- 6 AM and 6 PM
+        warnings = {1800, 900, 300, 60, 10},
+        reason = "daily_maintenance"
+    },
+    maintenance = {
+        enabled = false,
+        day = "sunday", -- Weekly maintenance
+        time = "04:00",
+        warnings = {3600, 1800, 900, 300, 60, 10},
+        reason = "weekly_maintenance"
+    }
+}
+
+local function isMaintenanceWindow()
+    local currentTime = os.date("*t")
+    local currentHour = currentTime.hour
+    
+    -- Avoid restarts during peak hours (7 PM - 11 PM)
+    if currentHour >= 19 and currentHour <= 23 then
+        return false
+    end
+    
+    -- Check if current player count is below threshold
+    local playerCount = #GetPlayers()
+    if playerCount > 20 then -- Don't restart with many players online
+        return false
+    end
+    
+    return true
+end
+
+local function getNextScheduledRestart()
+    local currentTime = os.time()
+    local date = os.date("*t", currentTime)
+    local nextRestart = nil
+    local nextReason = nil
+    
+    if restartSchedule.daily.enabled then
+        for _, timeStr in ipairs(restartSchedule.daily.times) do
+            local hour, min = timeStr:match("(%d+):(%d+)")
+            hour, min = tonumber(hour), tonumber(min)
+            
+            local scheduledTime = os.time({
+                year = date.year,
+                month = date.month,
+                day = date.day,
+                hour = hour,
+                min = min,
+                sec = 0
+            })
+            
+            -- If time has passed today, schedule for tomorrow
+            if scheduledTime <= currentTime then
+                scheduledTime = scheduledTime + 86400 -- Add 24 hours
+            end
+            
+            if not nextRestart or scheduledTime < nextRestart then
+                nextRestart = scheduledTime
+                nextReason = restartSchedule.daily.reason
+            end
+        end
+    end
+    
+    return nextRestart, nextReason
+end
+
+local function scheduleSmartRestart(staffId)
+    local nextRestart, reason = getNextScheduledRestart()
+    
+    if not nextRestart then
+        return false, "No restart scheduled"
+    end
+    
+    local delay = nextRestart - os.time()
+    
+    if delay < 60 then -- Less than 1 minute
+        return false, "Restart too soon"
+    end
+    
+    local options = {
+        reason = reason,
+        warningIntervals = restartSchedule.daily.warnings,
+        saveData = true,
+        gracefulShutdown = true,
+        notifyDiscord = true,
+        backupDatabase = reason == "weekly_maintenance"
+    }
+    
+    -- Check maintenance window closer to restart time
+    SetTimeout((delay - 300) * 1000, function() -- 5 minutes before
+        if not isMaintenanceWindow() then
+            -- Delay restart by 30 minutes
+            TriggerEvent('zyrix_admin:delayRestart', 1800)
+            TriggerEvent('zyrix_admin:notifyStaff', {
+                type = "restart_delayed",
+                message = "Restart delayed due to high player activity"
+            })
+        end
+    end)
+    
+    return exports['zyrix_admin']:RestartServer(staffId, delay, options)
+end
+
+CreateThread(function()
+    while true do
+        local nextRestart, reason = getNextScheduledRestart()
+        if nextRestart then
+            local timeToRestart = nextRestart - os.time()
+            
+            -- Schedule 1 hour before restart
+            if timeToRestart <= 3600 and timeToRestart > 3500 then
+                scheduleSmartRestart(0) -- System scheduled
+            end
+        end
+        
+        Wait(60000) -- Check every minute
+    end
+end)
+```
+
+### Emergency Restart System
+```lua
+local emergencyTriggers = {
+    highMemoryUsage = 85, -- Percentage
+    lowTPS = 15,         -- Ticks per second
+    playerCrashCount = 5, -- Crashes in 5 minutes
+    errorRate = 10       -- Errors per minute
+}
+
+local systemMetrics = {
+    memoryUsage = 0,
+    currentTPS = 20,
+    recentCrashes = {},
+    recentErrors = {}
+}
+
+local function updateSystemMetrics()
+    -- Update memory usage
+    systemMetrics.memoryUsage = math.random(30, 90) -- Replace with actual memory check
+    
+    -- Update TPS
+    systemMetrics.currentTPS = math.random(18, 20) -- Replace with actual TPS check
+    
+    -- Clean old crashes (older than 5 minutes)
+    local fiveMinutesAgo = os.time() - 300
+    for i = #systemMetrics.recentCrashes, 1, -1 do
+        if systemMetrics.recentCrashes[i] < fiveMinutesAgo then
+            table.remove(systemMetrics.recentCrashes, i)
+        end
+    end
+    
+    -- Clean old errors (older than 1 minute)
+    local oneMinuteAgo = os.time() - 60
+    for i = #systemMetrics.recentErrors, 1, -1 do
+        if systemMetrics.recentErrors[i] < oneMinuteAgo then
+            table.remove(systemMetrics.recentErrors, i)
+        end
+    end
+end
+
+local function checkEmergencyTriggers()
+    updateSystemMetrics()
+    
+    local triggers = {}
+    
+    if systemMetrics.memoryUsage > emergencyTriggers.highMemoryUsage then
+        table.insert(triggers, "high_memory")
+    end
+    
+    if systemMetrics.currentTPS < emergencyTriggers.lowTPS then
+        table.insert(triggers, "low_tps")
+    end
+    
+    if #systemMetrics.recentCrashes >= emergencyTriggers.playerCrashCount then
+        table.insert(triggers, "high_crash_rate")
+    end
+    
+    if #systemMetrics.recentErrors >= emergencyTriggers.errorRate then
+        table.insert(triggers, "high_error_rate")
+    end
+    
+    return triggers
+end
+
+local function initiateEmergencyRestart(triggers)
+    local triggerStr = table.concat(triggers, ", ")
+    local reason = string.format("emergency_restart: %s", triggerStr)
+    
+    local options = {
+        reason = reason,
+        warningIntervals = {120, 60, 30, 10}, -- Shorter warnings for emergency
+        saveData = true,
+        gracefulShutdown = false, -- Quick restart
+        notifyDiscord = true,
+        forceRestart = true,
+        customMessage = "Emergency restart required due to server instability"
+    }
+    
+    local success, status = exports['zyrix_admin']:RestartServer(0, 120, options) -- 2 minute delay
+    
+    if success then
+        TriggerEvent('zyrix_admin:notifyStaff', {
+            type = "emergency_restart",
+            message = string.format("Emergency restart initiated: %s", triggerStr),
+            urgent = true
+        })
+        
+        -- Log emergency restart
+        print(string.format("[EMERGENCY] Server restart initiated: %s", reason))
+    end
+    
+    return success, status
+end
+
+-- Monitor system health every 30 seconds
+CreateThread(function()
+    while true do
+        local triggers = checkEmergencyTriggers()
+        
+        if #triggers > 0 then
+            -- Only restart if no restart is already scheduled
+            if not isRestartScheduled() then
+                initiateEmergencyRestart(triggers)
+            end
+        end
+        
+        Wait(30000)
+    end
+end)
+
+-- Event handlers for tracking crashes and errors
+RegisterServerEvent('playerCrashed')
+AddEventHandler('playerCrashed', function()
+    table.insert(systemMetrics.recentCrashes, os.time())
+end)
+
+RegisterServerEvent('serverError')
+AddEventHandler('serverError', function()
+    table.insert(systemMetrics.recentErrors, os.time())
+end)
+```
+
+### Restart Management Commands
+```lua
+RegisterCommand('restart', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/restart <delay_minutes> [reason]"}
+        })
+        return
+    end
+    
+    local delay = tonumber(args[1]) * 60 -- Convert to seconds
+    local reason = #args > 1 and table.concat(args, " ", 2) or "manual_restart"
+    
+    if delay < 30 then
+        TriggerClientEvent('notification', source, "Minimum restart delay is 30 seconds")
+        return
+    end
+    
+    if delay > 3600 then
+        TriggerClientEvent('notification', source, "Maximum restart delay is 60 minutes")
+        return
+    end
+    
+    local options = {
+        reason = reason,
+        warningIntervals = {600, 300, 120, 60, 30, 10},
+        saveData = true,
+        gracefulShutdown = true,
+        notifyDiscord = true
+    }
+    
+    local success, status = exports['zyrix_admin']:RestartServer(source, delay, options)
+    
+    if success then
+        TriggerClientEvent('notification', source, 
+            string.format("Server restart scheduled for %d minutes", delay / 60)
+        )
+    else
+        TriggerClientEvent('notification', source, "Failed to schedule restart: " .. status)
+    end
+end, true)
+
+RegisterCommand('cancelrestart', function(source, args)
+    local success, status = exports['zyrix_admin']:CancelRestart(source)
+    
+    if success then
+        TriggerClientEvent('notification', source, "Restart cancelled successfully")
+        TriggerEvent('zyrix_admin:notifyStaff', {
+            type = "restart_cancelled",
+            message = string.format("Server restart cancelled by %s", GetPlayerName(source))
+        })
+    else
+        TriggerClientEvent('notification', source, "Failed to cancel restart: " .. status)
+    end
+end, true)
+
+RegisterCommand('restartstatus', function(source, args)
+    local restartInfo = exports['zyrix_admin']:GetRestartStatus()
+    
+    if restartInfo.scheduled then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Restart Status]", string.format("Scheduled in %d minutes - %s", 
+                math.floor(restartInfo.timeRemaining / 60), restartInfo.reason)}
+        })
+    else
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Restart Status]", "No restart scheduled"}
+        })
+    end
+end, true)
+```

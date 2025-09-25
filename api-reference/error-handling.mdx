@@ -1,0 +1,359 @@
+---
+title: "Error Handling"
+description: "Best practices for handling errors and edge cases in Zyrix API integration"
+---
+
+## Overview
+
+Robust error handling is crucial when integrating with the Zyrix Admin API. This guide covers common error scenarios, debugging techniques, and best practices for building reliable integrations.
+
+## Common Error Scenarios
+
+### Permission Errors
+The most common errors relate to insufficient permissions:
+
+```lua
+local function handlePermissionError(staffId, action, status)
+    local messages = {
+        no_permission = string.format("You don't have permission to %s", action),
+        insufficient_rank = "Your staff rank is too low for this action",
+        invalid_staff = "Invalid staff credentials"
+    }
+    
+    local message = messages[status] or "Permission error occurred"
+    TriggerClientEvent('notification', staffId, message)
+end
+
+-- Usage
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, 3600, reason)
+if not success and string.find(status, 'permission') then
+    handlePermissionError(staffId, 'ban players', status)
+end
+```
+
+### Player Not Found Errors
+Handle cases where target players are offline or invalid:
+
+```lua
+local function validatePlayer(playerId)
+    if not playerId or playerId < 1 then
+        return false, "Invalid player ID"
+    end
+    
+    if not GetPlayerName(playerId) then
+        return false, "Player not found or offline"
+    end
+    
+    return true
+end
+
+-- Usage before API calls
+local valid, error = validatePlayer(targetId)
+if not valid then
+    print("Validation failed:", error)
+    return
+end
+
+local success, status = exports['zyrix_admin']:HealPlayer(staffId, targetId)
+```
+
+### Rate Limiting
+Handle rate limiting for bulk operations:
+
+```lua
+local function performBulkAction(staffId, playerIds, actionFunction, actionName)
+    local results = {}
+    local rateLimited = 0
+    
+    for _, playerId in ipairs(playerIds) do
+        local success, status = actionFunction(staffId, playerId)
+        
+        if status == 'rate_limited' then
+            rateLimited = rateLimited + 1
+            Wait(1000) -- Wait 1 second before retry
+            success, status = actionFunction(staffId, playerId)
+        end
+        
+        results[playerId] = {success = success, status = status}
+    end
+    
+    if rateLimited > 0 then
+        print(string.format("Rate limited %d times during bulk %s", rateLimited, actionName))
+    end
+    
+    return results
+end
+```
+
+## Error Handling Patterns
+
+### Try-Catch Pattern
+Implement a try-catch style error handler:
+
+```lua
+local function tryApiCall(apiFunction, ...)
+    local success, status, data = apiFunction(...)
+    
+    if not success then
+        return {
+            success = false,
+            error = status,
+            message = "API call failed: " .. tostring(status)
+        }
+    end
+    
+    return {
+        success = true,
+        data = data,
+        status = status
+    }
+end
+
+-- Usage
+local result = tryApiCall(exports['zyrix_admin'].TeleportPlayer, staffId, targetId, coords)
+if not result.success then
+    print("Teleport failed:", result.message)
+else
+    print("Teleport successful")
+end
+```
+
+### Retry Logic
+Implement automatic retries for transient errors:
+
+```lua
+local function apiCallWithRetry(apiFunction, maxRetries, ...)
+    local args = {...}
+    
+    for attempt = 1, maxRetries do
+        local success, status, data = apiFunction(table.unpack(args))
+        
+        if success then
+            return success, status, data
+        end
+        
+        -- Retry on specific error types
+        if status == 'system_error' or status == 'rate_limited' then
+            if attempt < maxRetries then
+                Wait(1000 * attempt) -- Exponential backoff
+            else
+                break
+            end
+        else
+            -- Don't retry on permission or validation errors
+            break
+        end
+    end
+    
+    return false, status or 'max_retries_exceeded'
+end
+
+-- Usage
+local success, status = apiCallWithRetry(exports['zyrix_admin'].BanPlayer, 3, staffId, targetId, 3600, reason)
+```
+
+### Validation Helper
+Create validation helpers for common parameters:
+
+```lua
+local Validation = {}
+
+function Validation.validateStaffId(staffId)
+    if not staffId or type(staffId) ~= 'number' then
+        return false, 'invalid_staff_id_type'
+    end
+    
+    if not GetPlayerName(staffId) then
+        return false, 'staff_not_found'
+    end
+    
+    return true
+end
+
+function Validation.validateTargetId(targetId)
+    if not targetId or type(targetId) ~= 'number' then
+        return false, 'invalid_target_id_type'
+    end
+    
+    if not GetPlayerName(targetId) then
+        return false, 'target_not_found'
+    end
+    
+    return true
+end
+
+function Validation.validateDuration(duration)
+    if not duration or type(duration) ~= 'number' or duration < 0 then
+        return false, 'invalid_duration'
+    end
+    
+    -- Max 30 days
+    if duration > 2592000 then
+        return false, 'duration_too_long'
+    end
+    
+    return true
+end
+
+-- Usage
+local function safeBanPlayer(staffId, targetId, duration, reason)
+    local valid, error = Validation.validateStaffId(staffId)
+    if not valid then return false, error end
+    
+    valid, error = Validation.validateTargetId(targetId)
+    if not valid then return false, error end
+    
+    valid, error = Validation.validateDuration(duration)
+    if not valid then return false, error end
+    
+    return exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+end
+```
+
+## Debugging Techniques
+
+### Comprehensive Logging
+Implement detailed logging for troubleshooting:
+
+```lua
+local function debugApiCall(functionName, success, status, ...)
+    local args = {...}
+    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+    
+    local logEntry = string.format(
+        "[%s] API Call: %s | Success: %s | Status: %s | Args: %s",
+        timestamp,
+        functionName,
+        tostring(success),
+        tostring(status),
+        json.encode(args)
+    )
+    
+    print(logEntry)
+    
+    -- Optionally log to file
+    -- appendToLogFile("zyrix_api.log", logEntry)
+end
+
+-- Wrapper function with debug logging
+local function debugBanPlayer(staffId, targetId, duration, reason)
+    local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+    debugApiCall("BanPlayer", success, status, staffId, targetId, duration, reason)
+    return success, status
+end
+```
+
+### Status Code Mapping
+Create human-readable error messages:
+
+```lua
+local ERROR_MESSAGES = {
+    no_permission = "Insufficient permissions for this action",
+    invalid_staff = "Staff member not found or invalid",
+    invalid_target = "Target player not found or invalid",
+    player_not_found = "Player is not currently online",
+    already_banned = "Player is already banned",
+    not_banned = "Player is not currently banned",
+    invalid_duration = "Invalid ban duration specified",
+    rate_limited = "Action temporarily blocked - please wait",
+    system_error = "Internal system error - please try again"
+}
+
+local function getErrorMessage(status)
+    return ERROR_MESSAGES[status] or string.format("Unknown error: %s", status)
+end
+
+-- Usage
+local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+if not success then
+    local message = getErrorMessage(status)
+    TriggerClientEvent('notification', staffId, message)
+end
+```
+
+## Production Best Practices
+
+### 1. Always Validate Input
+```lua
+local function validateInputs(staffId, targetId, reason)
+    if not staffId or not GetPlayerName(staffId) then
+        return false, "Invalid staff member"
+    end
+    
+    if not targetId or not GetPlayerName(targetId) then
+        return false, "Invalid target player"
+    end
+    
+    if not reason or string.len(reason) < 3 then
+        return false, "Reason must be at least 3 characters"
+    end
+    
+    return true
+end
+```
+
+### 2. Implement Circuit Breaker Pattern
+```lua
+local CircuitBreaker = {
+    failures = 0,
+    threshold = 5,
+    timeout = 30000, -- 30 seconds
+    lastFailureTime = 0,
+    isOpen = false
+}
+
+function CircuitBreaker:canExecute()
+    if not self.isOpen then return true end
+    
+    if GetGameTimer() - self.lastFailureTime > self.timeout then
+        self.isOpen = false
+        self.failures = 0
+        return true
+    end
+    
+    return false
+end
+
+function CircuitBreaker:onSuccess()
+    self.failures = 0
+    self.isOpen = false
+end
+
+function CircuitBreaker:onFailure()
+    self.failures = self.failures + 1
+    self.lastFailureTime = GetGameTimer()
+    
+    if self.failures >= self.threshold then
+        self.isOpen = true
+    end
+end
+```
+
+### 3. Monitor API Health
+```lua
+local ApiHealth = {
+    totalCalls = 0,
+    successfulCalls = 0,
+    lastHealthCheck = 0
+}
+
+function ApiHealth:recordCall(success)
+    self.totalCalls = self.totalCalls + 1
+    if success then
+        self.successfulCalls = self.successfulCalls + 1
+    end
+end
+
+function ApiHealth:getSuccessRate()
+    if self.totalCalls == 0 then return 100 end
+    return (self.successfulCalls / self.totalCalls) * 100
+end
+
+function ApiHealth:shouldAlert()
+    return self.getSuccessRate() < 95 and self.totalCalls > 10
+end
+```
+
+<Warning>
+  Always implement proper error handling in production environments. Unhandled errors can cause script failures and poor user experiences.
+</Warning>

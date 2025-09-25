@@ -1,0 +1,487 @@
+---
+title: "Warn Player"
+description: "Issue warnings to players with comprehensive tracking and webhook integration"
+---
+
+## Overview
+
+The `WarnPlayer` function allows staff members to issue warnings to players for rule violations. All warnings are automatically logged and can trigger Discord webhook notifications if configured.
+
+## WarnPlayer
+
+Issue a warning to a player for rule violations.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:WarnPlayer(staffId, targetId, reason)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member issuing the warning
+- `targetId` (number) - Server ID of the player receiving the warning
+- `reason` (string) - Reason for the warning (minimum 3 characters)
+
+### Returns
+- `success` (boolean) - Whether the warning was successfully issued
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'invalid_target'`, `'invalid_reason'`
+
+### Example
+```lua
+-- Issue a warning for RDM
+local success, status = exports['zyrix_admin']:WarnPlayer(source, targetId, "Random Death Match - Killing without RP reason")
+
+if success then
+    TriggerClientEvent('chat:addMessage', source, {
+        color = {255, 165, 0},
+        multiline = false,
+        args = {"[Warning]", string.format("Warning issued to %s", GetPlayerName(targetId))}
+    })
+    
+    TriggerClientEvent('chat:addMessage', targetId, {
+        color = {255, 0, 0},
+        multiline = false,
+        args = {"[Warning]", "You have been warned: " .. reason}
+    })
+else
+    print("Warning failed:", status)
+end
+```
+
+## Advanced Examples
+
+### Warning System with Escalation
+```lua
+local warningSystem = {
+    thresholds = {
+        {warnings = 3, action = "kick", message = "3 warnings reached - kicked"},
+        {warnings = 5, action = "tempban", duration = 3600, message = "5 warnings reached - 1 hour ban"},
+        {warnings = 8, action = "ban", duration = 86400, message = "8 warnings reached - 24 hour ban"}
+    }
+}
+
+local function issueWarningWithEscalation(staffId, targetId, reason)
+    -- Issue the warning
+    local success, status = exports['zyrix_admin']:WarnPlayer(staffId, targetId, reason)
+    
+    if not success then
+        return false, status
+    end
+    
+    -- Get player's total warnings
+    local warnSuccess, warnStatus, warnings = exports['zyrix_admin']:FetchWarnings(targetId)
+    
+    if warnSuccess and warnings then
+        local totalWarnings = #warnings
+        
+        -- Check escalation thresholds
+        for _, threshold in ipairs(warningSystem.thresholds) do
+            if totalWarnings >= threshold.warnings then
+                TriggerClientEvent('notification', targetId, threshold.message)
+                
+                if threshold.action == "kick" then
+                    exports['zyrix_admin']:KickPlayer(staffId, targetId, threshold.message)
+                elseif threshold.action == "tempban" or threshold.action == "ban" then
+                    exports['zyrix_admin']:BanPlayer(staffId, targetId, threshold.duration, threshold.message)
+                end
+                
+                -- Notify staff
+                TriggerClientEvent('notification', staffId, 
+                    string.format("Auto-escalation: %s %s after %d warnings", 
+                    threshold.action, GetPlayerName(targetId), totalWarnings)
+                )
+                break
+            end
+        end
+    end
+    
+    return true, "success"
+end
+
+-- Command with escalation
+RegisterCommand('warn', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/warn <player_id> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local reason = table.concat(args, " ", 2)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    issueWarningWithEscalation(source, targetId, reason)
+end, true)
+```
+
+### Warning Categories System
+```lua
+local warningCategories = {
+    ["rdm"] = {
+        fullName = "Random Death Match",
+        defaultReason = "Killing players without proper roleplay reason",
+        severity = 3
+    },
+    ["vdm"] = {
+        fullName = "Vehicle Death Match", 
+        defaultReason = "Using vehicles to kill players without RP reason",
+        severity = 3
+    },
+    ["failrp"] = {
+        fullName = "Fail Roleplay",
+        defaultReason = "Breaking character or unrealistic behavior",
+        severity = 2
+    },
+    ["metagaming"] = {
+        fullName = "Metagaming",
+        defaultReason = "Using out-of-character information in roleplay",
+        severity = 2
+    },
+    ["powergaming"] = {
+        fullName = "Powergaming",
+        defaultReason = "Forcing roleplay scenarios on other players",
+        severity = 2
+    },
+    ["micspam"] = {
+        fullName = "Microphone Spam",
+        defaultReason = "Spamming music or excessive noise through microphone",
+        severity = 1
+    }
+}
+
+local function issueTypedWarning(staffId, targetId, category, customReason)
+    local warningType = warningCategories[category:lower()]
+    
+    if not warningType then
+        return false, "Invalid warning category"
+    end
+    
+    local reason = customReason or warningType.defaultReason
+    local fullReason = string.format("[%s] %s", warningType.fullName, reason)
+    
+    local success, status = exports['zyrix_admin']:WarnPlayer(staffId, targetId, fullReason)
+    
+    if success then
+        -- Additional logging based on severity
+        if warningType.severity >= 3 then
+            print(string.format("[HIGH SEVERITY WARNING] %s warned %s for %s", 
+                  GetPlayerName(staffId), GetPlayerName(targetId), warningType.fullName))
+        end
+    end
+    
+    return success, status
+end
+
+-- Command for categorized warnings
+RegisterCommand('cwarn', function(source, args)
+    if #args < 2 then
+        local categories = {}
+        for category, data in pairs(warningCategories) do
+            table.insert(categories, string.format("%s (%s)", category, data.fullName))
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/cwarn <player_id> <category> [custom_reason]"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Categories]", table.concat(categories, ", ")}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local category = args[2]
+    local customReason = #args > 2 and table.concat(args, " ", 3) or nil
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    local success, status = issueTypedWarning(source, targetId, category, customReason)
+    
+    if success then
+        TriggerClientEvent('notification', source, 
+            string.format("Issued %s warning to %s", category:upper(), GetPlayerName(targetId))
+        )
+    else
+        TriggerClientEvent('notification', source, "Warning failed: " .. status)
+    end
+end, true)
+```
+
+### Warning History Analysis
+```lua
+local warningAnalytics = {}
+
+-- Analyze player warning patterns
+function warningAnalytics.analyzePlayer(playerId)
+    local success, status, warnings = exports['zyrix_admin']:FetchWarnings(playerId)
+    
+    if not success or not warnings then
+        return {
+            total = 0,
+            categories = {},
+            recentCount = 0,
+            averageInterval = 0,
+            riskLevel = "low"
+        }
+    end
+    
+    local analysis = {
+        total = #warnings,
+        categories = {},
+        recentCount = 0,
+        averageInterval = 0,
+        riskLevel = "low"
+    }
+    
+    local currentTime = os.time()
+    local categoryCount = {}
+    local timestamps = {}
+    
+    for _, warning in ipairs(warnings) do
+        -- Count categories
+        local category = warning.reason:match("%[(.-)%]") or "uncategorized"
+        categoryCount[category] = (categoryCount[category] or 0) + 1
+        
+        -- Count recent warnings (last 24 hours)
+        if warning.timestamp and (currentTime - warning.timestamp) <= 86400 then
+            analysis.recentCount = analysis.recentCount + 1
+        end
+        
+        -- Store timestamps for interval calculation
+        if warning.timestamp then
+            table.insert(timestamps, warning.timestamp)
+        end
+    end
+    
+    -- Calculate average interval between warnings
+    if #timestamps > 1 then
+        table.sort(timestamps)
+        local totalInterval = timestamps[#timestamps] - timestamps[1]
+        analysis.averageInterval = totalInterval / (#timestamps - 1)
+    end
+    
+    -- Determine risk level
+    if analysis.total >= 8 or analysis.recentCount >= 3 then
+        analysis.riskLevel = "high"
+    elseif analysis.total >= 4 or analysis.recentCount >= 2 then
+        analysis.riskLevel = "medium"
+    else
+        analysis.riskLevel = "low"
+    end
+    
+    analysis.categories = categoryCount
+    
+    return analysis
+end
+
+-- Get server warning statistics
+function warningAnalytics.getServerStats()
+    local players = GetPlayers()
+    local stats = {
+        totalWarnings = 0,
+        totalPlayers = #players,
+        playersWithWarnings = 0,
+        categoryBreakdown = {},
+        riskDistribution = {high = 0, medium = 0, low = 0}
+    }
+    
+    for _, playerId in ipairs(players) do
+        local analysis = warningAnalytics.analyzePlayer(playerId)
+        
+        if analysis.total > 0 then
+            stats.playersWithWarnings = stats.playersWithWarnings + 1
+            stats.totalWarnings = stats.totalWarnings + analysis.total
+            stats.riskDistribution[analysis.riskLevel] = stats.riskDistribution[analysis.riskLevel] + 1
+            
+            -- Merge category data
+            for category, count in pairs(analysis.categories) do
+                stats.categoryBreakdown[category] = (stats.categoryBreakdown[category] or 0) + count
+            end
+        else
+            stats.riskDistribution.low = stats.riskDistribution.low + 1
+        end
+    end
+    
+    return stats
+end
+
+-- Command to view warning analytics
+RegisterCommand('warnstats', function(source, args)
+    if #args == 1 then
+        -- Player-specific stats
+        local targetId = tonumber(args[1])
+        if targetId and GetPlayerName(targetId) then
+            local analysis = warningAnalytics.analyzePlayer(targetId)
+            
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Warning Stats]", string.format("%s - Total: %d, Recent: %d, Risk: %s", 
+                       GetPlayerName(targetId), analysis.total, analysis.recentCount, analysis.riskLevel:upper())}
+            })
+            
+            if next(analysis.categories) then
+                local categoryText = {}
+                for category, count in pairs(analysis.categories) do
+                    table.insert(categoryText, string.format("%s: %d", category, count))
+                end
+                TriggerClientEvent('chat:addMessage', source, {
+                    args = {"[Categories]", table.concat(categoryText, ", ")}
+                })
+            end
+        else
+            TriggerClientEvent('notification', source, "Player not found")
+        end
+    else
+        -- Server-wide stats
+        local stats = warningAnalytics.getServerStats()
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Server Warning Stats]", string.format("Total: %d warnings across %d players", 
+                   stats.totalWarnings, stats.playersWithWarnings)}
+        })
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Risk Distribution]", string.format("High: %d, Medium: %d, Low: %d", 
+                   stats.riskDistribution.high, stats.riskDistribution.medium, stats.riskDistribution.low)}
+        })
+    end
+end, true)
+```
+
+### Bulk Warning System
+```lua
+local function bulkWarnPlayers(staffId, playerIds, reason, excludeStaff)
+    local results = {
+        success = {},
+        failed = {},
+        total = 0
+    }
+    
+    for _, playerId in ipairs(playerIds) do
+        -- Skip staff members if requested
+        if excludeStaff and exports['zyrix_admin']:IsStaffMember(playerId) then
+            table.insert(results.failed, {id = playerId, reason = "staff_excluded"})
+        else
+            local success, status = exports['zyrix_admin']:WarnPlayer(staffId, playerId, reason)
+            
+            if success then
+                table.insert(results.success, playerId)
+                TriggerClientEvent('notification', playerId, 
+                    "You have received a server-wide warning: " .. reason
+                )
+            else
+                table.insert(results.failed, {id = playerId, reason = status})
+            end
+        end
+        
+        results.total = results.total + 1
+    end
+    
+    -- Notify staff member
+    TriggerClientEvent('notification', staffId, 
+        string.format("Bulk warning: %d success, %d failed out of %d total", 
+        #results.success, #results.failed, results.total)
+    )
+    
+    -- Server announcement
+    if #results.success > 0 then
+        TriggerClientEvent('chat:addMessage', -1, {
+            color = {255, 165, 0},
+            multiline = false,
+            args = {"[Server Warning]", reason}
+        })
+    end
+    
+    return results
+end
+
+-- Command for server-wide warnings
+RegisterCommand('serverwarn', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/serverwarn <reason>"}
+        })
+        return
+    end
+    
+    local reason = table.concat(args, " ")
+    local players = GetPlayers()
+    
+    -- Remove issuing staff from list
+    for i, playerId in ipairs(players) do
+        if playerId == source then
+            table.remove(players, i)
+            break
+        end
+    end
+    
+    bulkWarnPlayers(source, players, reason, true) -- Exclude other staff
+end, true)
+```
+
+## Error Handling
+
+Handle common scenarios when issuing warnings:
+
+```lua
+local function safeWarnPlayer(staffId, targetId, reason)
+    -- Validate reason
+    if not reason or string.len(reason) < 3 then
+        return false, "Warning reason must be at least 3 characters"
+    end
+    
+    if string.len(reason) > 500 then
+        return false, "Warning reason too long (max 500 characters)"
+    end
+    
+    -- Check if player exists
+    if not GetPlayerName(targetId) then
+        return false, "Target player not found"
+    end
+    
+    -- Prevent self-warning
+    if staffId == targetId then
+        return false, "Cannot warn yourself"
+    end
+    
+    -- Check staff permissions
+    if not exports['zyrix_admin']:HasPermission(staffId, 'warn') then
+        return false, "Insufficient permissions to warn players"
+    end
+    
+    -- Issue warning
+    local success, status = exports['zyrix_admin']:WarnPlayer(staffId, targetId, reason)
+    
+    if not success then
+        local errorMessages = {
+            no_permission = "You don't have permission to warn players",
+            player_not_found = "Target player not found",
+            invalid_target = "Invalid player ID",
+            invalid_reason = "Invalid warning reason"
+        }
+        
+        local message = errorMessages[status] or ("Warning failed: " .. status)
+        TriggerClientEvent('notification', staffId, message)
+    else
+        -- Log successful warning
+        print(string.format("[WARNING] %s warned %s: %s", 
+              GetPlayerName(staffId), GetPlayerName(targetId), reason))
+    end
+    
+    return success, status
+end
+```
+
+<Info>
+  Warnings are permanently stored and can be viewed by staff members. Use clear, specific reasons that explain the rule violation.
+</Info>
+
+<Tip>
+  Consider implementing warning categories and escalation systems to maintain consistency in your server's moderation approach.
+</Tip>

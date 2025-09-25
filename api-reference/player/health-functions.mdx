@@ -1,0 +1,411 @@
+---
+title: "Health Functions"
+description: "Manage player health, armor, and revival with comprehensive healing capabilities"
+---
+
+## Overview
+
+The Zyrix API provides complete health management functions for controlling player health, armor, and revival states. All functions include permission validation and support various health restoration options.
+
+## HealPlayer
+
+Restore a player's health and optionally their armor.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:HealPlayer(staffId, targetId, includeArmor)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member performing the action
+- `targetId` (number) - Server ID of the player to heal
+- `includeArmor` (boolean, optional) - Whether to restore armor (default: `true`)
+
+### Returns
+- `success` (boolean) - Whether the heal action succeeded
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'invalid_target'`
+
+### Example
+```lua
+-- Heal player with armor
+local success, status = exports['zyrix_admin']:HealPlayer(source, targetId, true)
+
+if success then
+    TriggerClientEvent('notification', source, 
+        string.format("Healed %s (with armor)", GetPlayerName(targetId))
+    )
+else
+    print("Heal failed:", status)
+end
+
+-- Heal player without armor
+local success, status = exports['zyrix_admin']:HealPlayer(source, targetId, false)
+```
+
+## KillPlayer
+
+Instantly kill a target player.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:KillPlayer(staffId, targetId)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `targetId` (number) - Server ID of the player to kill
+
+### Returns
+- `success` (boolean) - Whether the kill action succeeded
+- `status` (string) - Status code
+
+### Example
+```lua
+-- Kill player (use with caution)
+local success, status = exports['zyrix_admin']:KillPlayer(source, targetId)
+
+if success then
+    print(string.format("%s killed %s", GetPlayerName(source), GetPlayerName(targetId)))
+else
+    TriggerClientEvent('notification', source, "Kill action failed: " .. status)
+end
+```
+
+## RevivePlayer
+
+Revive a dead player and restore their health.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:RevivePlayer(staffId, targetId)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `targetId` (number) - Server ID of the player to revive
+
+### Returns
+- `success` (boolean) - Whether the revive action succeeded
+- `status` (string) - Status code
+
+### Example
+```lua
+-- Revive dead player
+local success, status = exports['zyrix_admin']:RevivePlayer(source, targetId)
+
+if success then
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {0, 255, 0},
+        multiline = false,
+        args = {"[Medic]", string.format("%s was revived by an admin", GetPlayerName(targetId))}
+    })
+end
+```
+
+## Advanced Examples
+
+### Mass Healing for Events
+```lua
+local function massHealEvent(staffId, radius)
+    local staffCoords = GetEntityCoords(GetPlayerPed(staffId))
+    local players = GetPlayers()
+    local healed = 0
+    
+    for _, playerId in ipairs(players) do
+        if playerId ~= staffId then
+            local playerCoords = GetEntityCoords(GetPlayerPed(playerId))
+            local distance = #(staffCoords - playerCoords)
+            
+            if distance <= radius then
+                local success = exports['zyrix_admin']:HealPlayer(staffId, playerId, true)
+                if success then
+                    healed = healed + 1
+                    TriggerClientEvent('notification', playerId, "You have been healed!")
+                end
+            end
+        end
+    end
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Healed %d players within %dm radius", healed, radius)
+    )
+end
+
+-- Command usage
+RegisterCommand('massheal', function(source, args)
+    local radius = tonumber(args[1]) or 50 -- Default 50 meter radius
+    massHealEvent(source, radius)
+end, true)
+```
+
+### Health Monitoring System
+```lua
+local healthMonitoring = {}
+
+-- Monitor player health periodically
+CreateThread(function()
+    while true do
+        Wait(5000) -- Check every 5 seconds
+        
+        local players = GetPlayers()
+        for _, playerId in ipairs(players) do
+            local playerPed = GetPlayerPed(playerId)
+            if playerPed then
+                local health = GetEntityHealth(playerPed)
+                local armor = GetPedArmour(playerPed)
+                
+                -- Store health data
+                healthMonitoring[playerId] = {
+                    health = health,
+                    armor = armor,
+                    timestamp = os.time(),
+                    isDead = health <= 0
+                }
+            end
+        end
+    end
+end)
+
+-- Function to get player health status
+local function getPlayerHealthStatus(playerId)
+    return healthMonitoring[playerId] or {
+        health = 0,
+        armor = 0,
+        timestamp = 0,
+        isDead = true
+    }
+end
+
+-- Auto-revive players who have been dead too long
+CreateThread(function()
+    while true do
+        Wait(60000) -- Check every minute
+        
+        for playerId, data in pairs(healthMonitoring) do
+            if data.isDead and (os.time() - data.timestamp) > 300 then -- 5 minutes
+                local success = exports['zyrix_admin']:RevivePlayer(1, playerId) -- Use server as staff ID
+                if success then
+                    TriggerClientEvent('notification', playerId, "Auto-revived after 5 minutes")
+                    print(string.format("Auto-revived %s after being dead for 5+ minutes", GetPlayerName(playerId)))
+                end
+            end
+        end
+    end
+end)
+```
+
+### Smart Healing with Damage History
+```lua
+local damageHistory = {}
+
+-- Track damage dealt to players
+AddEventHandler('playerDamaged', function(playerId, damage, source)
+    if not damageHistory[playerId] then
+        damageHistory[playerId] = {}
+    end
+    
+    table.insert(damageHistory[playerId], {
+        damage = damage,
+        source = source,
+        timestamp = os.time()
+    })
+    
+    -- Keep only last 10 damage events
+    if #damageHistory[playerId] > 10 then
+        table.remove(damageHistory[playerId], 1)
+    end
+end)
+
+-- Smart heal function that considers recent damage
+local function smartHeal(staffId, targetId)
+    local recentDamage = 0
+    local currentTime = os.time()
+    
+    if damageHistory[targetId] then
+        for _, dmg in ipairs(damageHistory[targetId]) do
+            -- Count damage from last 30 seconds
+            if (currentTime - dmg.timestamp) <= 30 then
+                recentDamage = recentDamage + dmg.damage
+            end
+        end
+    end
+    
+    -- If player took significant recent damage, heal with armor
+    local includeArmor = recentDamage > 50
+    local success, status = exports['zyrix_admin']:HealPlayer(staffId, targetId, includeArmor)
+    
+    if success then
+        local healType = includeArmor and "full heal (with armor)" or "health only"
+        TriggerClientEvent('notification', staffId, 
+            string.format("Smart healed %s (%s)", GetPlayerName(targetId), healType)
+        )
+    end
+    
+    return success, status
+end
+```
+
+### Medical RP Integration
+```lua
+local medicalRP = {
+    healingItems = {
+        ["bandage"] = {health = 25, armor = 0, time = 5000},
+        ["medkit"] = {health = 100, armor = 0, time = 10000},
+        ["armor_vest"] = {health = 0, armor = 100, time = 15000}
+    }
+}
+
+-- RP healing with items and animation
+function medicalRP.performHeal(staffId, targetId, itemType)
+    local item = medicalRP.healingItems[itemType]
+    if not item then
+        return false, "invalid_item"
+    end
+    
+    -- Start healing animation/progress
+    TriggerClientEvent('medical:startHealing', staffId, targetId, item.time)
+    
+    -- Wait for healing time
+    SetTimeout(item.time, function()
+        -- Check if both players are still online and in range
+        if GetPlayerName(staffId) and GetPlayerName(targetId) then
+            local staffCoords = GetEntityCoords(GetPlayerPed(staffId))
+            local targetCoords = GetEntityCoords(GetPlayerPed(targetId))
+            
+            if #(staffCoords - targetCoords) <= 3.0 then -- Within 3 meters
+                -- Apply healing based on item
+                if item.health > 0 then
+                    local currentHealth = GetEntityHealth(GetPlayerPed(targetId))
+                    local newHealth = math.min(200, currentHealth + item.health)
+                    SetEntityHealth(GetPlayerPed(targetId), newHealth)
+                end
+                
+                if item.armor > 0 then
+                    local currentArmor = GetPedArmour(GetPlayerPed(targetId))
+                    local newArmor = math.min(100, currentArmor + item.armor)
+                    SetPedArmour(GetPlayerPed(targetId), newArmor)
+                end
+                
+                TriggerClientEvent('notification', staffId, 
+                    string.format("Successfully treated %s with %s", GetPlayerName(targetId), itemType)
+                )
+                TriggerClientEvent('notification', targetId, 
+                    string.format("You were treated by %s", GetPlayerName(staffId))
+                )
+                
+                return true, "success"
+            else
+                TriggerClientEvent('notification', staffId, "Patient moved too far away")
+                return false, "out_of_range"
+            end
+        else
+            return false, "player_not_found"
+        end
+    end)
+end
+```
+
+### Emergency Response System
+```lua
+local emergencySystem = {}
+
+-- Automatic medical response
+function emergencySystem.checkCriticalHealth()
+    local players = GetPlayers()
+    
+    for _, playerId in ipairs(players) do
+        local playerPed = GetPlayerPed(playerId)
+        if playerPed then
+            local health = GetEntityHealth(playerPed)
+            
+            -- Critical health threshold (below 50)
+            if health > 0 and health < 50 then
+                -- Check if player has been at critical health for too long
+                if not emergencySystem.criticalPlayers then
+                    emergencySystem.criticalPlayers = {}
+                end
+                
+                if not emergencySystem.criticalPlayers[playerId] then
+                    emergencySystem.criticalPlayers[playerId] = os.time()
+                    
+                    -- Notify medical staff
+                    TriggerEvent('medical:playerCritical', playerId, health)
+                    
+                    -- Auto-heal after 60 seconds if no medical attention
+                    SetTimeout(60000, function()
+                        if emergencySystem.criticalPlayers[playerId] and GetEntityHealth(GetPlayerPed(playerId)) < 50 then
+                            local success = exports['zyrix_admin']:HealPlayer(1, playerId, false) -- Console heal, health only
+                            if success then
+                                TriggerClientEvent('notification', playerId, "Emergency services provided medical attention")
+                            end
+                            emergencySystem.criticalPlayers[playerId] = nil
+                        end
+                    end)
+                end
+            else
+                -- Player is no longer critical
+                if emergencySystem.criticalPlayers and emergencySystem.criticalPlayers[playerId] then
+                    emergencySystem.criticalPlayers[playerId] = nil
+                end
+            end
+        end
+    end
+end
+
+-- Run emergency health check every 10 seconds
+CreateThread(function()
+    while true do
+        Wait(10000)
+        emergencySystem.checkCriticalHealth()
+    end
+end)
+```
+
+## Error Handling
+
+Handle common scenarios when using health functions:
+
+```lua
+local function safeHealPlayer(staffId, targetId, includeArmor)
+    -- Validate inputs
+    if not GetPlayerName(staffId) then
+        return false, "Invalid staff member"
+    end
+    
+    if not GetPlayerName(targetId) then
+        return false, "Target player not found"
+    end
+    
+    -- Check if player is already at full health
+    local playerPed = GetPlayerPed(targetId)
+    local health = GetEntityHealth(playerPed)
+    local armor = GetPedArmour(playerPed)
+    
+    if health >= 200 and (not includeArmor or armor >= 100) then
+        return false, "Player is already at full health"
+    end
+    
+    -- Attempt to heal
+    local success, status = exports['zyrix_admin']:HealPlayer(staffId, targetId, includeArmor)
+    
+    if not success then
+        if status == 'no_permission' then
+            TriggerClientEvent('notification', staffId, 'You cannot heal players')
+        elseif status == 'player_not_found' then
+            TriggerClientEvent('notification', staffId, 'Target player not found')
+        else
+            TriggerClientEvent('notification', staffId, 'Healing failed: ' .. status)
+        end
+    end
+    
+    return success, status
+end
+```
+
+<Warning>
+  Use the KillPlayer function responsibly. It should only be used for administrative purposes and with proper justification.
+</Warning>
+
+<Tip>
+  Consider implementing logging for all health-related administrative actions to maintain accountability and track usage patterns.
+</Tip>

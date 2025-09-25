@@ -1,0 +1,124 @@
+---
+title: "Authentication"
+description: "Understanding permissions and access control in the Zyrix Admin API"
+---
+
+## Overview
+
+The Zyrix Admin API uses a built-in permission system that validates staff member access for every function call. All API functions require a valid staff ID and automatically check permissions based on your server configuration.
+
+## Staff ID Parameter
+
+Every API function requires a `staffId` parameter as the first argument:
+
+```lua
+-- staffId is typically the player's server ID
+local staffId = source -- In server-side events
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+```
+
+## Permission Levels
+
+Your Zyrix configuration defines different permission levels and what actions each level can perform:
+
+<CodeGroup>
+
+```lua title="Example Permission Check"
+-- The API automatically validates permissions
+local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+
+if status == 'no_permission' then
+    print('Staff member lacks teleportation permissions')
+end
+```
+
+```lua title="Custom Permission Validation"
+-- You can also check permissions before calling functions
+local hasPermission = exports['zyrix_admin']:HasPermission(staffId, 'teleport')
+
+if hasPermission then
+    local success, status = exports['zyrix_admin']:TeleportPlayer(staffId, targetId, coords)
+end
+```
+
+</CodeGroup>
+
+## Common Permission Types
+
+Different functions require different permission levels:
+
+| Function Category | Example Permission |
+|-------------------|-------------------|
+| Player Management | `teleport`, `heal`, `freeze` |
+| Moderation | `warn`, `kick`, `ban` |
+| Vehicle Management | `spawn_vehicle`, `delete_vehicle` |
+| Staff Tools | `spectate`, `noclip`, `invisible` |
+| Server Management | `screenshot`, `announce`, `restart` |
+
+## Error Responses
+
+When permission checks fail, you'll receive specific error responses:
+
+```lua
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, 3600, "Cheating")
+
+-- Possible permission-related responses:
+if status == 'no_permission' then
+    -- Staff member doesn't have ban permissions
+elseif status == 'invalid_staff' then
+    -- Invalid or offline staff ID provided
+elseif status == 'insufficient_rank' then
+    -- Staff rank is too low for this action
+end
+```
+
+## Best Practices
+
+### 1. Validate Staff Status
+Always ensure the staff member is valid before making API calls:
+
+```lua
+local function isValidStaff(playerId)
+    return exports['zyrix_admin']:IsStaffMember(playerId)
+end
+
+if isValidStaff(staffId) then
+    -- Proceed with API call
+end
+```
+
+### 2. Handle Permission Errors Gracefully
+Provide meaningful feedback when permissions are insufficient:
+
+```lua
+local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+
+if status == 'no_permission' then
+    TriggerClientEvent('chat:addMessage', staffId, {
+        color = {255, 0, 0},
+        multiline = false,
+        args = {"[Zyrix]", "You don't have permission to kick players"}
+    })
+end
+```
+
+### 3. Log Administrative Actions
+Consider additional logging for sensitive operations:
+
+```lua
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+
+if success then
+    -- Additional custom logging
+    print(string.format('[ADMIN] %s banned player %s for: %s', 
+          GetPlayerName(staffId), GetPlayerName(targetId), reason))
+end
+```
+
+## Configuration
+
+Permission configuration is managed through your Zyrix admin panel or configuration files. Refer to the [Permissions Configuration](/configuration/permissions) guide for detailed setup instructions.
+
+<Info>
+  The permission system is designed to be flexible and configurable. You can customize permission levels and requirements through your Zyrix admin configuration.
+</Info>

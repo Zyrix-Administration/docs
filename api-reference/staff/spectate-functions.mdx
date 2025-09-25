@@ -1,0 +1,232 @@
+---
+title: "Spectate Functions"
+description: "Advanced spectating capabilities for staff monitoring and administration"
+---
+
+## Overview
+
+The Zyrix API provides comprehensive spectating functions that allow staff members to monitor players discreetly and gather evidence of rule violations.
+
+## StartSpectating
+
+Begin spectating a target player with various spectate modes.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:StartSpectating(staffId, targetId, spectateMode)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member
+- `targetId` (number) - Server ID of the player to spectate
+- `spectateMode` (string, optional) - Spectate mode: `'default'`, `'cinematic'`, `'free'`
+
+### Example
+```lua
+local success, status = exports['zyrix_admin']:StartSpectating(source, targetId, 'default')
+
+if success then
+    TriggerClientEvent('notification', source, 
+        string.format("Now spectating %s", GetPlayerName(targetId))
+    )
+else
+    TriggerClientEvent('notification', source, "Failed to start spectating: " .. status)
+end
+```
+
+## StopSpectating
+
+Stop spectating and return to normal view.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:StopSpectating(staffId)
+```
+
+## Advanced Examples
+
+### Spectate Queue System
+```lua
+local spectateQueues = {}
+
+local function createSpectateQueue(staffId, playerList, duration)
+    local queueId = string.format("%d_%d", staffId, os.time())
+    
+    spectateQueues[queueId] = {
+        staffId = staffId,
+        players = playerList,
+        currentIndex = 1,
+        duration = duration, -- seconds per player
+        startTime = os.time()
+    }
+    
+    -- Start spectating first player
+    if #playerList > 0 then
+        exports['zyrix_admin']:StartSpectating(staffId, playerList[1])
+        TriggerClientEvent('notification', staffId, 
+            string.format("Spectate queue started: %d players, %ds each", #playerList, duration)
+        )
+        
+        -- Set timer for next player
+        SetTimeout(duration * 1000, function()
+            advanceSpectateQueue(queueId)
+        end)
+    end
+    
+    return queueId
+end
+
+local function advanceSpectateQueue(queueId)
+    local queue = spectateQueues[queueId]
+    if not queue or not GetPlayerName(queue.staffId) then
+        spectateQueues[queueId] = nil
+        return
+    end
+    
+    queue.currentIndex = queue.currentIndex + 1
+    
+    if queue.currentIndex <= #queue.players then
+        -- Spectate next player
+        local nextPlayer = queue.players[queue.currentIndex]
+        if GetPlayerName(nextPlayer) then
+            exports['zyrix_admin']:StartSpectating(queue.staffId, nextPlayer)
+            TriggerClientEvent('notification', queue.staffId, 
+                string.format("Now spectating %s (%d/%d)", 
+                             GetPlayerName(nextPlayer), queue.currentIndex, #queue.players)
+            )
+            
+            -- Set timer for next advancement
+            SetTimeout(queue.duration * 1000, function()
+                advanceSpectateQueue(queueId)
+            end)
+        else
+            -- Player left, skip to next
+            advanceSpectateQueue(queueId)
+        end
+    else
+        -- Queue finished
+        exports['zyrix_admin']:StopSpectating(queue.staffId)
+        TriggerClientEvent('notification', queue.staffId, "Spectate queue completed")
+        spectateQueues[queueId] = nil
+    end
+end
+
+RegisterCommand('spectateall', function(source, args)
+    local duration = tonumber(args[1]) or 30 -- Default 30 seconds per player
+    
+    if duration < 5 or duration > 300 then
+        TriggerClientEvent('notification', source, "Duration must be between 5-300 seconds")
+        return
+    end
+    
+    local players = GetPlayers()
+    local targetPlayers = {}
+    
+    -- Exclude staff member
+    for _, playerId in ipairs(players) do
+        if playerId ~= source then
+            table.insert(targetPlayers, playerId)
+        end
+    end
+    
+    if #targetPlayers == 0 then
+        TriggerClientEvent('notification', source, "No other players to spectate")
+        return
+    end
+    
+    createSpectateQueue(source, targetPlayers, duration)
+end, true)
+```
+
+### Evidence Gathering System
+```lua
+local evidenceSystem = {
+    activeRecordings = {},
+    maxRecordingTime = 300 -- 5 minutes
+}
+
+local function startEvidenceGathering(staffId, targetId, suspectedViolation)
+    local recordingId = string.format("%d_%d_%d", staffId, targetId, os.time())
+    
+    evidenceSystem.activeRecordings[recordingId] = {
+        staffId = staffId,
+        targetId = targetId,
+        violation = suspectedViolation,
+        startTime = os.time(),
+        screenshots = {},
+        notes = {}
+    }
+    
+    -- Start spectating with evidence mode
+    local success = exports['zyrix_admin']:StartSpectating(staffId, targetId, 'evidence')
+    
+    if success then
+        TriggerClientEvent('notification', staffId, 
+            string.format("Evidence gathering started for %s", GetPlayerName(targetId))
+        )
+        
+        -- Auto-stop after max time
+        SetTimeout(evidenceSystem.maxRecordingTime * 1000, function()
+            if evidenceSystem.activeRecordings[recordingId] then
+                stopEvidenceGathering(staffId, recordingId, "Auto-stopped after time limit")
+            end
+        end)
+        
+        return recordingId
+    else
+        evidenceSystem.activeRecordings[recordingId] = nil
+        return nil
+    end
+end
+
+local function stopEvidenceGathering(staffId, recordingId, reason)
+    local recording = evidenceSystem.activeRecordings[recordingId]
+    if not recording then return false end
+    
+    exports['zyrix_admin']:StopSpectating(staffId)
+    
+    -- Generate evidence report
+    local duration = os.time() - recording.startTime
+    local report = {
+        id = recordingId,
+        staff = GetPlayerName(staffId),
+        target = GetPlayerName(recording.targetId),
+        violation = recording.violation,
+        duration = duration,
+        screenshots = #recording.screenshots,
+        notes = #recording.notes,
+        stopReason = reason,
+        timestamp = os.time()
+    }
+    
+    -- Save evidence report (implement your storage method)
+    saveEvidenceReport(report)
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Evidence gathering completed. Duration: %ds, Screenshots: %d", 
+                     duration, #recording.screenshots)
+    )
+    
+    evidenceSystem.activeRecordings[recordingId] = nil
+    return report
+end
+
+RegisterCommand('evidence', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/evidence <player_id> <suspected_violation>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local violation = table.concat(args, " ", 2)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    startEvidenceGathering(source, targetId, violation)
+end, true)
+```

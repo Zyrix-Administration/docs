@@ -1,0 +1,317 @@
+---
+title: "Server Screenshots"
+description: "Capture player screens and server states for monitoring and evidence collection"
+---
+
+## TakeScreenshot
+
+Capture screenshots of specific players or server areas for administrative purposes.
+
+<Note>
+Screenshots are primarily used for evidence collection, monitoring, and documentation purposes. Ensure compliance with your server's privacy policies.
+</Note>
+
+### Syntax
+```lua
+local success, status, screenshotData = exports['zyrix_admin']:TakeScreenshot(staffId, targetId, options)
+```
+
+### Parameters
+- `staffId` (number): ID of the staff member taking the screenshot
+- `targetId` (number): ID of the target player
+- `options` (table): Screenshot configuration options
+
+### Options
+```lua
+{
+    quality = 85,           -- JPEG quality (1-100)
+    width = 1920,          -- Screenshot width
+    height = 1080,         -- Screenshot height
+    includeUI = false,     -- Include game UI elements
+    timestamp = true,      -- Add timestamp overlay
+    watermark = true,      -- Add server watermark
+    reason = "monitoring", -- Reason for screenshot
+    autoSave = true,       -- Automatically save to server
+    notify = false         -- Notify target player
+}
+```
+
+### Return Values
+- `success` (boolean): Whether the screenshot was taken successfully
+- `status` (string): Status message or error description
+- `screenshotData` (table): Screenshot information and metadata
+
+### Example
+```lua
+local options = {
+    quality = 90,
+    includeUI = false,
+    reason = "suspected cheating",
+    timestamp = true
+}
+
+local success, status, data = exports['zyrix_admin']:TakeScreenshot(source, targetPlayer, options)
+
+if success then
+    print(string.format("Screenshot saved: %s", data.filename))
+    print(string.format("File size: %d KB", data.fileSize))
+else
+    print("Screenshot failed: " .. status)
+end
+```
+
+## Advanced Examples
+
+### Evidence Collection System
+```lua
+local evidenceDB = {}
+
+local function collectEvidence(staffId, targetId, reason, evidenceType)
+    local evidenceId = string.format("EV_%d_%d", os.time(), math.random(10000))
+    
+    local screenshotOptions = {
+        quality = 95,
+        includeUI = false,
+        reason = reason,
+        timestamp = true,
+        watermark = true,
+        autoSave = true
+    }
+    
+    local success, status, screenshotData = exports['zyrix_admin']:TakeScreenshot(staffId, targetId, screenshotOptions)
+    
+    if success then
+        evidenceDB[evidenceId] = {
+            staffId = staffId,
+            targetId = targetId,
+            reason = reason,
+            type = evidenceType,
+            timestamp = os.time(),
+            screenshot = screenshotData,
+            status = "active"
+        }
+        
+        -- Log to admin system
+        TriggerEvent('zyrix_admin:logAction', staffId, 'evidence_collected', {
+            evidenceId = evidenceId,
+            targetId = targetId,
+            reason = reason
+        })
+        
+        return evidenceId, screenshotData
+    else
+        return nil, status
+    end
+end
+
+local function getEvidenceByPlayer(targetId)
+    local playerEvidence = {}
+    
+    for evidenceId, evidence in pairs(evidenceDB) do
+        if evidence.targetId == targetId and evidence.status == "active" then
+            table.insert(playerEvidence, {
+                id = evidenceId,
+                staffId = evidence.staffId,
+                reason = evidence.reason,
+                timestamp = evidence.timestamp,
+                screenshot = evidence.screenshot.filename
+            })
+        end
+    end
+    
+    table.sort(playerEvidence, function(a, b) return a.timestamp > b.timestamp end)
+    return playerEvidence
+end
+
+RegisterCommand('evidence', function(source, args)
+    if #args < 3 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/evidence <player_id> <type> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local evidenceType = args[2]
+    local reason = table.concat(args, " ", 3)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Invalid player ID")
+        return
+    end
+    
+    local evidenceId, data = collectEvidence(source, targetId, reason, evidenceType)
+    
+    if evidenceId then
+        TriggerClientEvent('notification', source, 
+            string.format("Evidence collected: %s", evidenceId)
+        )
+        
+        -- Notify other staff
+        TriggerEvent('zyrix_admin:notifyStaff', {
+            type = "evidence_collected",
+            message = string.format("Evidence collected on %s by %s", 
+                GetPlayerName(targetId), GetPlayerName(source)),
+            evidenceId = evidenceId
+        })
+    else
+        TriggerClientEvent('notification', source, "Failed to collect evidence: " .. data)
+    end
+end, true)
+
+RegisterCommand('viewevidence', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/viewevidence <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local evidence = getEvidenceByPlayer(targetId)
+    
+    if #evidence == 0 then
+        TriggerClientEvent('notification', source, "No evidence found for this player")
+        return
+    end
+    
+    TriggerClientEvent('zyrix_admin:showEvidenceUI', source, {
+        targetId = targetId,
+        targetName = GetPlayerName(targetId),
+        evidence = evidence
+    })
+end, true)
+```
+
+### Automated Monitoring System
+```lua
+local monitoringProfiles = {}
+local activeMonitoring = {}
+
+local function createMonitoringProfile(name, triggers, screenshotInterval)
+    monitoringProfiles[name] = {
+        triggers = triggers,
+        screenshotInterval = screenshotInterval or 30000, -- 30 seconds
+        lastScreenshot = {},
+        totalScreenshots = 0
+    }
+end
+
+local function startMonitoring(staffId, targetId, profileName, duration)
+    if not monitoringProfiles[profileName] then
+        return false, "Monitoring profile not found"
+    end
+    
+    local monitoringId = string.format("MON_%d_%d", targetId, os.time())
+    
+    activeMonitoring[monitoringId] = {
+        staffId = staffId,
+        targetId = targetId,
+        profile = profileName,
+        startTime = os.time(),
+        endTime = os.time() + duration,
+        screenshotCount = 0,
+        status = "active"
+    }
+    
+    -- Start screenshot interval
+    local function takeMonitoringScreenshot()
+        if not activeMonitoring[monitoringId] or 
+           activeMonitoring[monitoringId].status ~= "active" or
+           os.time() > activeMonitoring[monitoringId].endTime then
+            return
+        end
+        
+        local options = {
+            quality = 75,
+            includeUI = false,
+            reason = string.format("automated_monitoring_%s", profileName),
+            timestamp = true,
+            autoSave = true,
+            notify = false
+        }
+        
+        local success, status, data = exports['zyrix_admin']:TakeScreenshot(staffId, targetId, options)
+        
+        if success then
+            activeMonitoring[monitoringId].screenshotCount = activeMonitoring[monitoringId].screenshotCount + 1
+            monitoringProfiles[profileName].totalScreenshots = monitoringProfiles[profileName].totalScreenshots + 1
+            
+            TriggerEvent('zyrix_admin:logAction', staffId, 'monitoring_screenshot', {
+                monitoringId = monitoringId,
+                targetId = targetId,
+                screenshotFile = data.filename
+            })
+        end
+        
+        SetTimeout(monitoringProfiles[profileName].screenshotInterval, takeMonitoringScreenshot)
+    end
+    
+    takeMonitoringScreenshot()
+    return true, monitoringId
+end
+
+-- Create default monitoring profiles
+createMonitoringProfile("suspicious_activity", {
+    "speed_hack_detected",
+    "teleport_detected",
+    "godmode_detected"
+}, 15000)
+
+createMonitoringProfile("rp_monitoring", {
+    "staff_duty",
+    "event_participation"
+}, 60000)
+
+createMonitoringProfile("evidence_collection", {
+    "report_filed",
+    "rule_violation"
+}, 10000)
+
+RegisterCommand('startmonitor', function(source, args)
+    if #args < 3 then
+        local profiles = {}
+        for name, _ in pairs(monitoringProfiles) do
+            table.insert(profiles, name)
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/startmonitor <player_id> <profile> <duration_minutes>"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Profiles]", table.concat(profiles, ", ")}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local profile = args[2]
+    local duration = tonumber(args[3]) * 60 -- Convert to seconds
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Invalid player ID")
+        return
+    end
+    
+    if duration > 3600 then -- Max 1 hour
+        TriggerClientEvent('notification', source, "Maximum monitoring duration is 60 minutes")
+        return
+    end
+    
+    local success, result = startMonitoring(source, targetId, profile, duration)
+    
+    if success then
+        TriggerClientEvent('notification', source, 
+            string.format("Monitoring started: %s", result)
+        )
+        
+        TriggerEvent('zyrix_admin:notifyStaff', {
+            type = "monitoring_started",
+            message = string.format("Monitoring started on %s (%s profile) by %s", 
+                GetPlayerName(targetId), profile, GetPlayerName(source))
+        })
+    else
+        TriggerClientEvent('notification', source, "Failed to start monitoring: " .. result)
+    end
+end, true)
+```

@@ -1,0 +1,406 @@
+---
+title: "Player Snapshots"
+description: "Capture and manage comprehensive player data snapshots for administrative purposes"
+---
+
+## SnapshotPlayers
+
+Capture comprehensive data snapshots of all online players for administrative analysis and record-keeping.
+
+### Syntax
+```lua
+local success, status, snapshotData = exports['zyrix_admin']:SnapshotPlayers(staffId, options)
+```
+
+### Parameters
+- `staffId` (number): ID of the staff member requesting the snapshot
+- `options` (table): Snapshot configuration options
+
+### Options
+```lua
+{
+    includeOffline = false,     -- Include recently offline players
+    includeInventory = true,    -- Include player inventory data
+    includeVehicles = true,     -- Include owned vehicles
+    includePositions = true,    -- Include current positions
+    includeStats = true,        -- Include player statistics
+    includeWarnings = true,     -- Include warning history
+    includeMoney = true,        -- Include money/bank data
+    reason = "routine_check",   -- Reason for snapshot
+    format = "json",           -- Output format: "json", "csv", "xml"
+    compress = true,           -- Compress output data
+    autoSave = true            -- Auto-save to server storage
+}
+```
+
+### Return Values
+- `success` (boolean): Whether the snapshot was created successfully
+- `status` (string): Status message or error description
+- `snapshotData` (table): Snapshot information and metadata
+
+### Example
+```lua
+local options = {
+    includeInventory = true,
+    includeVehicles = true,
+    reason = "weekly_audit",
+    format = "json",
+    autoSave = true
+}
+
+local success, status, snapshot = exports['zyrix_admin']:SnapshotPlayers(source, options)
+
+if success then
+    print(string.format("Snapshot created: %s", snapshot.filename))
+    print(string.format("Players captured: %d", snapshot.playerCount))
+    print(string.format("File size: %d KB", snapshot.fileSize))
+else
+    print("Snapshot failed: " .. status)
+end
+```
+
+## Advanced Examples
+
+### Automated Daily Snapshots
+```lua
+local snapshotSchedule = {}
+local snapshotHistory = {}
+
+local function scheduleSnapshot(staffId, schedule, options)
+    local scheduleId = string.format("SCHEDULE_%d_%d", os.time(), math.random(10000))
+    
+    snapshotSchedule[scheduleId] = {
+        staffId = staffId,
+        schedule = schedule, -- "daily", "weekly", "monthly"
+        options = options or {},
+        nextRun = calculateNextRun(schedule),
+        active = true,
+        created = os.time()
+    }
+    
+    return scheduleId
+end
+
+local function calculateNextRun(schedule)
+    local now = os.time()
+    local date = os.date("*t", now)
+    
+    if schedule == "daily" then
+        -- Next day at 3 AM
+        local nextRun = os.time({
+            year = date.year,
+            month = date.month,
+            day = date.day + 1,
+            hour = 3,
+            min = 0,
+            sec = 0
+        })
+        return nextRun
+    elseif schedule == "weekly" then
+        -- Next Sunday at 2 AM
+        local daysUntilSunday = (7 - date.wday + 1) % 7
+        if daysUntilSunday == 0 then daysUntilSunday = 7 end
+        
+        local nextRun = os.time({
+            year = date.year,
+            month = date.month,
+            day = date.day + daysUntilSunday,
+            hour = 2,
+            min = 0,
+            sec = 0
+        })
+        return nextRun
+    elseif schedule == "monthly" then
+        -- First day of next month at 1 AM
+        local nextMonth = date.month + 1
+        local nextYear = date.year
+        
+        if nextMonth > 12 then
+            nextMonth = 1
+            nextYear = nextYear + 1
+        end
+        
+        local nextRun = os.time({
+            year = nextYear,
+            month = nextMonth,
+            day = 1,
+            hour = 1,
+            min = 0,
+            sec = 0
+        })
+        return nextRun
+    end
+    
+    return now + 86400 -- Default to 24 hours
+end
+
+local function runScheduledSnapshot(scheduleId)
+    local schedule = snapshotSchedule[scheduleId]
+    if not schedule or not schedule.active then
+        return
+    end
+    
+    local options = schedule.options
+    options.reason = string.format("scheduled_%s_snapshot", schedule.schedule)
+    options.autoSave = true
+    
+    local success, status, snapshotData = exports['zyrix_admin']:SnapshotPlayers(schedule.staffId, options)
+    
+    if success then
+        local historyEntry = {
+            scheduleId = scheduleId,
+            timestamp = os.time(),
+            playerCount = snapshotData.playerCount,
+            filename = snapshotData.filename,
+            fileSize = snapshotData.fileSize,
+            status = "completed"
+        }
+        
+        table.insert(snapshotHistory, historyEntry)
+        
+        -- Keep only last 100 entries
+        if #snapshotHistory > 100 then
+            table.remove(snapshotHistory, 1)
+        end
+        
+        -- Schedule next run
+        schedule.nextRun = calculateNextRun(schedule.schedule)
+        
+        print(string.format("[SNAPSHOT] %s snapshot completed: %d players, %s", 
+            schedule.schedule, snapshotData.playerCount, snapshotData.filename))
+        
+        -- Notify staff
+        TriggerEvent('zyrix_admin:notifyStaff', {
+            type = "scheduled_snapshot",
+            message = string.format("Scheduled %s snapshot completed: %d players captured", 
+                schedule.schedule, snapshotData.playerCount)
+        })
+    else
+        print(string.format("[SNAPSHOT ERROR] %s snapshot failed: %s", schedule.schedule, status))
+    end
+end
+
+-- Check scheduled snapshots every minute
+CreateThread(function()
+    while true do
+        local currentTime = os.time()
+        
+        for scheduleId, schedule in pairs(snapshotSchedule) do
+            if schedule.active and currentTime >= schedule.nextRun then
+                runScheduledSnapshot(scheduleId)
+            end
+        end
+        
+        Wait(60000) -- Check every minute
+    end
+end)
+
+RegisterCommand('schedulesnapshot', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/schedulesnapshot <daily|weekly|monthly> [options]"}
+        })
+        return
+    end
+    
+    local schedule = args[1]:lower()
+    local validSchedules = {daily = true, weekly = true, monthly = true}
+    
+    if not validSchedules[schedule] then
+        TriggerClientEvent('notification', source, "Invalid schedule. Use: daily, weekly, or monthly")
+        return
+    end
+    
+    local options = {
+        includeInventory = true,
+        includeVehicles = true,
+        includePositions = true,
+        includeStats = true,
+        includeWarnings = true,
+        includeMoney = true,
+        format = "json",
+        compress = true,
+        autoSave = true
+    }
+    
+    local scheduleId = scheduleSnapshot(source, schedule, options)
+    local nextRun = snapshotSchedule[scheduleId].nextRun
+    local nextRunStr = os.date("%Y-%m-%d %H:%M:%S", nextRun)
+    
+    TriggerClientEvent('notification', source, 
+        string.format("Scheduled %s snapshots created. Next run: %s", schedule, nextRunStr)
+    )
+end, true)
+```
+
+### Player Comparison System
+```lua
+local playerComparisons = {}
+
+local function comparePlayerSnapshots(staffId, playerId, snapshot1, snapshot2)
+    local comparisonId = string.format("CMP_%d_%d", playerId, os.time())
+    
+    local changes = {
+        inventory = {},
+        vehicles = {},
+        money = {},
+        position = {},
+        stats = {}
+    }
+    
+    -- Compare inventory
+    if snapshot1.inventory and snapshot2.inventory then
+        for item, count1 in pairs(snapshot1.inventory) do
+            local count2 = snapshot2.inventory[item] or 0
+            if count1 ~= count2 then
+                changes.inventory[item] = {
+                    before = count1,
+                    after = count2,
+                    change = count2 - count1
+                }
+            end
+        end
+        
+        for item, count2 in pairs(snapshot2.inventory) do
+            if not snapshot1.inventory[item] then
+                changes.inventory[item] = {
+                    before = 0,
+                    after = count2,
+                    change = count2
+                }
+            end
+        end
+    end
+    
+    -- Compare money
+    if snapshot1.money and snapshot2.money then
+        if snapshot1.money.cash ~= snapshot2.money.cash then
+            changes.money.cash = {
+                before = snapshot1.money.cash,
+                after = snapshot2.money.cash,
+                change = snapshot2.money.cash - snapshot1.money.cash
+            }
+        end
+        
+        if snapshot1.money.bank ~= snapshot2.money.bank then
+            changes.money.bank = {
+                before = snapshot1.money.bank,
+                after = snapshot2.money.bank,
+                change = snapshot2.money.bank - snapshot1.money.bank
+            }
+        end
+    end
+    
+    -- Compare position
+    if snapshot1.position and snapshot2.position then
+        local distance = math.sqrt(
+            (snapshot2.position.x - snapshot1.position.x)^2 +
+            (snapshot2.position.y - snapshot1.position.y)^2 +
+            (snapshot2.position.z - snapshot1.position.z)^2
+        )
+        
+        if distance > 10.0 then -- Significant movement
+            changes.position = {
+                before = snapshot1.position,
+                after = snapshot2.position,
+                distance = distance
+            }
+        end
+    end
+    
+    playerComparisons[comparisonId] = {
+        staffId = staffId,
+        playerId = playerId,
+        snapshot1 = snapshot1.id,
+        snapshot2 = snapshot2.id,
+        changes = changes,
+        timestamp = os.time(),
+        significant = hasSignificantChanges(changes)
+    }
+    
+    return comparisonId, changes
+end
+
+local function hasSignificantChanges(changes)
+    -- Check for significant inventory changes
+    for item, change in pairs(changes.inventory) do
+        if math.abs(change.change) > 100 then -- Large quantity change
+            return true
+        end
+    end
+    
+    -- Check for significant money changes
+    if changes.money.cash and math.abs(changes.money.cash.change) > 50000 then
+        return true
+    end
+    
+    if changes.money.bank and math.abs(changes.money.bank.change) > 100000 then
+        return true
+    end
+    
+    -- Check for teleportation
+    if changes.position and changes.position.distance > 1000 then
+        return true
+    end
+    
+    return false
+end
+
+RegisterCommand('compareplayer', function(source, args)
+    if #args < 3 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/compareplayer <player_id> <snapshot1_id> <snapshot2_id>"}
+        })
+        return
+    end
+    
+    local playerId = tonumber(args[1])
+    local snapshot1Id = args[2]
+    local snapshot2Id = args[3]
+    
+    -- Retrieve snapshots from storage (implement your storage system)
+    local snapshot1 = getSnapshotById(snapshot1Id)
+    local snapshot2 = getSnapshotById(snapshot2Id)
+    
+    if not snapshot1 or not snapshot2 then
+        TriggerClientEvent('notification', source, "One or both snapshots not found")
+        return
+    end
+    
+    local comparisonId, changes = comparePlayerSnapshots(source, playerId, snapshot1, snapshot2)
+    
+    TriggerClientEvent('zyrix_admin:showPlayerComparison', source, {
+        comparisonId = comparisonId,
+        playerId = playerId,
+        playerName = GetPlayerName(playerId),
+        changes = changes,
+        significant = hasSignificantChanges(changes)
+    })
+end, true)
+```
+
+### Snapshot Analysis Dashboard
+```lua
+RegisterCommand('snapshotdashboard', function(source, args)
+    local dashboardData = {
+        totalSnapshots = #snapshotHistory,
+        recentSnapshots = {},
+        playerTrends = {},
+        alerts = {}
+    }
+    
+    -- Get recent snapshots
+    for i = math.max(1, #snapshotHistory - 9), #snapshotHistory do
+        table.insert(dashboardData.recentSnapshots, snapshotHistory[i])
+    end
+    
+    -- Generate alerts for unusual activity
+    local currentPlayers = GetPlayers()
+    for _, playerId in ipairs(currentPlayers) do
+        -- Check for unusual player behavior patterns
+        -- (implement your analysis logic here)
+    end
+    
+    TriggerClientEvent('zyrix_admin:showSnapshotDashboard', source, dashboardData)
+end, true)
+```

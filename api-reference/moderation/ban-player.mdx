@@ -1,0 +1,616 @@
+---
+title: "Ban Player"
+description: "Temporarily or permanently ban players with comprehensive tracking and appeal systems"
+---
+
+## Overview
+
+The `BanPlayer` function allows staff members to ban players temporarily or permanently. All bans are stored in the database with detailed information and can trigger webhook notifications.
+
+## BanPlayer
+
+Ban a player for a specified duration with a detailed reason.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member issuing the ban
+- `targetId` (number) - Server ID of the player to ban
+- `duration` (number) - Ban duration in seconds (`0` for permanent ban)
+- `reason` (string) - Detailed reason for the ban (minimum 5 characters)
+
+### Returns
+- `success` (boolean) - Whether the ban was successfully issued
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'already_banned'`, `'invalid_duration'`, `'invalid_reason'`
+
+### Example
+```lua
+-- Temporary ban (1 hour)
+local duration = 3600 -- 1 hour in seconds
+local success, status = exports['zyrix_admin']:BanPlayer(source, targetId, duration, "Cheating - Aimbot detected")
+
+if success then
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {255, 0, 0},
+        multiline = false,
+        args = {"[Ban]", string.format("%s was banned for %d minutes", GetPlayerName(targetId), duration / 60)}
+    })
+else
+    TriggerClientEvent('notification', source, "Ban failed: " .. status)
+end
+
+-- Permanent ban
+local success, status = exports['zyrix_admin']:BanPlayer(source, targetId, 0, "Multiple rule violations - Permanent removal")
+```
+
+## Duration Helpers
+
+Common ban duration constants for consistency:
+
+```lua
+local BanDurations = {
+    -- Minutes
+    FIVE_MINUTES = 300,
+    FIFTEEN_MINUTES = 900,
+    THIRTY_MINUTES = 1800,
+    
+    -- Hours  
+    ONE_HOUR = 3600,
+    THREE_HOURS = 10800,
+    SIX_HOURS = 21600,
+    TWELVE_HOURS = 43200,
+    
+    -- Days
+    ONE_DAY = 86400,
+    THREE_DAYS = 259200,
+    ONE_WEEK = 604800,
+    TWO_WEEKS = 1209600,
+    ONE_MONTH = 2592000,
+    
+    -- Permanent
+    PERMANENT = 0
+}
+
+-- Example usage
+local success = exports['zyrix_admin']:BanPlayer(source, targetId, BanDurations.ONE_DAY, "RDM - 24 hour ban")
+```
+
+## Advanced Examples
+
+### Progressive Ban System
+```lua
+local progressiveBans = {
+    durations = {
+        [1] = BanDurations.ONE_HOUR,      -- First ban: 1 hour
+        [2] = BanDurations.SIX_HOURS,     -- Second ban: 6 hours  
+        [3] = BanDurations.ONE_DAY,       -- Third ban: 1 day
+        [4] = BanDurations.THREE_DAYS,    -- Fourth ban: 3 days
+        [5] = BanDurations.ONE_WEEK,      -- Fifth ban: 1 week
+        [6] = BanDurations.PERMANENT      -- Sixth ban: permanent
+    }
+}
+
+local function getPlayerBanHistory(playerId)
+    -- This would integrate with your ban history system
+    -- Returns count of previous bans
+    return exports['zyrix_admin']:GetPlayerBanCount(playerId) or 0
+end
+
+local function progressiveBan(staffId, targetId, reason)
+    local banCount = getPlayerBanHistory(targetId)
+    local nextBanNumber = banCount + 1
+    local duration = progressiveBans.durations[nextBanNumber] or BanDurations.PERMANENT
+    
+    local banType = duration == 0 and "permanent" or string.format("%d minutes", duration / 60)
+    local fullReason = string.format("[Progressive Ban #%d] %s", nextBanNumber, reason)
+    
+    local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, fullReason)
+    
+    if success then
+        TriggerClientEvent('notification', staffId, 
+            string.format("Progressive ban issued: %s (%s)", GetPlayerName(targetId), banType)
+        )
+        
+        -- Log escalation
+        print(string.format("[PROGRESSIVE BAN] %s issued ban #%d to %s: %s", 
+              GetPlayerName(staffId), nextBanNumber, GetPlayerName(targetId), reason))
+    end
+    
+    return success, status
+end
+
+-- Command for progressive bans
+RegisterCommand('pban', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/pban <player_id> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local reason = table.concat(args, " ", 2)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    progressiveBan(source, targetId, reason)
+end, true)
+```
+
+### Ban Appeal System
+```lua
+local banAppeals = {}
+
+-- Submit ban appeal
+local function submitBanAppeal(playerId, steamId, appealText)
+    local appealId = string.format("%s_%d", steamId, os.time())
+    
+    banAppeals[appealId] = {
+        playerId = playerId,
+        steamId = steamId,
+        playerName = GetPlayerName(playerId),
+        appealText = appealText,
+        submitTime = os.time(),
+        status = "pending", -- pending, approved, denied
+        reviewedBy = nil,
+        reviewTime = nil,
+        reviewNotes = nil
+    }
+    
+    -- Notify staff about new appeal
+    local staff = GetStaffOnline()
+    for _, staffId in ipairs(staff) do
+        TriggerClientEvent('notification', staffId, 
+            string.format("New ban appeal from %s (ID: %s)", GetPlayerName(playerId), appealId)
+        )
+    end
+    
+    return appealId
+end
+
+-- Review ban appeal
+local function reviewBanAppeal(staffId, appealId, decision, notes)
+    local appeal = banAppeals[appealId]
+    if not appeal then
+        return false, "Appeal not found"
+    end
+    
+    if appeal.status ~= "pending" then
+        return false, "Appeal already reviewed"
+    end
+    
+    appeal.status = decision -- "approved" or "denied"
+    appeal.reviewedBy = GetPlayerName(staffId)
+    appeal.reviewTime = os.time()
+    appeal.reviewNotes = notes
+    
+    -- If approved, unban the player
+    if decision == "approved" then
+        local unbanSuccess = exports['zyrix_admin']:UnbanPlayer(staffId, appeal.steamId)
+        if unbanSuccess then
+            print(string.format("[APPEAL APPROVED] %s unbanned %s via appeal", 
+                  GetPlayerName(staffId), appeal.playerName))
+        else
+            return false, "Failed to unban player"
+        end
+    end
+    
+    -- Log the review
+    print(string.format("[APPEAL REVIEWED] %s %s appeal from %s: %s", 
+          GetPlayerName(staffId), decision, appeal.playerName, notes or "No notes"))
+    
+    return true, "Appeal reviewed successfully"
+end
+
+-- Commands for appeal system
+RegisterCommand('submitappeal', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/submitappeal <appeal_text>"}
+        })
+        return
+    end
+    
+    local appealText = table.concat(args, " ")
+    local steamId = GetPlayerIdentifier(source, 0) -- Get Steam ID
+    
+    if string.len(appealText) < 20 then
+        TriggerClientEvent('notification', source, "Appeal must be at least 20 characters long")
+        return
+    end
+    
+    local appealId = submitBanAppeal(source, steamId, appealText)
+    TriggerClientEvent('notification', source, 
+        string.format("Ban appeal submitted. Appeal ID: %s", appealId)
+    )
+end, false) -- Allow for all players
+
+RegisterCommand('reviewappeal', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/reviewappeal <appeal_id> <approve/deny> [notes]"}
+        })
+        return
+    end
+    
+    local appealId = args[1]
+    local decision = args[2]:lower()
+    local notes = #args > 2 and table.concat(args, " ", 3) or nil
+    
+    if decision ~= "approve" and decision ~= "deny" then
+        TriggerClientEvent('notification', source, "Decision must be 'approve' or 'deny'")
+        return
+    end
+    
+    local success, message = reviewBanAppeal(source, appealId, decision == "approve" and "approved" or "denied", notes)
+    TriggerClientEvent('notification', source, message)
+end, true)
+
+RegisterCommand('listappeals', function(source, args)
+    local pendingAppeals = {}
+    for appealId, appeal in pairs(banAppeals) do
+        if appeal.status == "pending" then
+            table.insert(pendingAppeals, string.format("%s: %s", appealId, appeal.playerName))
+        end
+    end
+    
+    if #pendingAppeals > 0 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Pending Appeals]", table.concat(pendingAppeals, ", ")}
+        })
+    else
+        TriggerClientEvent('notification', source, "No pending appeals")
+    end
+end, true)
+```
+
+### Scheduled Ban System  
+```lua
+local scheduledBans = {}
+
+local function scheduleBan(staffId, targetId, delaySeconds, duration, reason, notifyPlayer)
+    local banId = string.format("%d_%d", targetId, os.time())
+    
+    -- Notify target player if requested
+    if notifyPlayer then
+        TriggerClientEvent('chat:addMessage', targetId, {
+            color = {255, 0, 0},
+            multiline = false,
+            args = {"[Warning]", string.format("You will be banned in %d seconds: %s", delaySeconds, reason)}
+        })
+    end
+    
+    -- Store scheduled ban info
+    scheduledBans[banId] = {
+        staffId = staffId,
+        targetId = targetId,
+        duration = duration,
+        reason = reason,
+        scheduleTime = os.time(),
+        delaySeconds = delaySeconds
+    }
+    
+    -- Schedule the ban
+    SetTimeout(delaySeconds * 1000, function()
+        -- Check if player is still online and ban is still scheduled
+        if GetPlayerName(targetId) and scheduledBans[banId] then
+            local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+            
+            if success then
+                print(string.format("[SCHEDULED BAN] %s banned %s after %d second delay", 
+                      GetPlayerName(staffId), GetPlayerName(targetId), delaySeconds))
+            end
+            
+            scheduledBans[banId] = nil
+        end
+    end)
+    
+    -- Notify staff member
+    TriggerClientEvent('notification', staffId, 
+        string.format("Ban scheduled for %s in %d seconds", GetPlayerName(targetId), delaySeconds)
+    )
+    
+    return banId
+end
+
+RegisterCommand('sban', function(source, args)
+    if #args < 4 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/sban <player_id> <delay_seconds> <duration_minutes> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local delay = tonumber(args[2])
+    local durationMinutes = tonumber(args[3])
+    local reason = table.concat(args, " ", 4)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    if not delay or delay <= 0 or delay > 600 then
+        TriggerClientEvent('notification', source, "Delay must be between 1-600 seconds")
+        return
+    end
+    
+    if not durationMinutes or durationMinutes < 0 then
+        TriggerClientEvent('notification', source, "Duration must be 0 or greater (0 = permanent)")
+        return
+    end
+    
+    local duration = durationMinutes == 0 and 0 or (durationMinutes * 60)
+    scheduleBan(source, targetId, delay, duration, reason, true)
+end, true)
+```
+
+### Ban Category System
+```lua
+local banCategories = {
+    ["cheating"] = {
+        name = "Cheating/Exploiting",
+        minDuration = BanDurations.ONE_DAY,
+        maxDuration = BanDurations.PERMANENT,
+        defaultDuration = BanDurations.ONE_WEEK,
+        requiresEvidence = true,
+        severity = 5
+    },
+    ["rdm"] = {
+        name = "Random Death Match",
+        minDuration = BanDurations.ONE_HOUR,
+        maxDuration = BanDurations.THREE_DAYS,
+        defaultDuration = BanDurations.SIX_HOURS,
+        requiresEvidence = false,
+        severity = 3
+    },
+    ["harassment"] = {
+        name = "Harassment",
+        minDuration = BanDurations.THREE_HOURS,
+        maxDuration = BanDurations.PERMANENT,
+        defaultDuration = BanDurations.ONE_DAY,
+        requiresEvidence = true,
+        severity = 4
+    },
+    ["griefing"] = {
+        name = "Griefing",
+        minDuration = BanDurations.ONE_HOUR,
+        maxDuration = BanDurations.ONE_WEEK,
+        defaultDuration = BanDurations.TWELVE_HOURS,
+        requiresEvidence = false,
+        severity = 2
+    }
+}
+
+local function categorizedBan(staffId, targetId, category, customDuration, customReason, evidence)
+    local banCategory = banCategories[category:lower()]
+    if not banCategory then
+        return false, "Invalid ban category"
+    end
+    
+    -- Validate evidence requirement
+    if banCategory.requiresEvidence and (not evidence or evidence == "") then
+        return false, "This ban category requires evidence"
+    end
+    
+    -- Determine duration
+    local duration = customDuration or banCategory.defaultDuration
+    
+    -- Validate duration within category limits
+    if duration < banCategory.minDuration or (banCategory.maxDuration > 0 and duration > banCategory.maxDuration) then
+        return false, string.format("Duration must be between %d and %d seconds for %s", 
+               banCategory.minDuration, banCategory.maxDuration, banCategory.name)
+    end
+    
+    -- Format reason
+    local reason = customReason or banCategory.name
+    local fullReason = string.format("[%s] %s", banCategory.name:upper(), reason)
+    
+    if evidence then
+        fullReason = fullReason .. " | Evidence: " .. evidence
+    end
+    
+    -- Execute ban
+    local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, fullReason)
+    
+    if success then
+        -- Log with severity
+        local severityText = {"LOW", "MINOR", "MODERATE", "SERIOUS", "CRITICAL"}
+        print(string.format("[%s SEVERITY BAN] %s banned %s for %s", 
+              severityText[banCategory.severity], GetPlayerName(staffId), 
+              GetPlayerName(targetId), banCategory.name))
+    end
+    
+    return success, status
+end
+
+RegisterCommand('cban', function(source, args)
+    if #args < 3 then
+        local categories = {}
+        for category, data in pairs(banCategories) do
+            table.insert(categories, string.format("%s (%s)", category, data.name))
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/cban <player_id> <category> <reason> [evidence]"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Categories]", table.concat(categories, ", ")}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local category = args[2]
+    local reason = args[3]
+    local evidence = #args > 3 and table.concat(args, " ", 4) or nil
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    local success, status = categorizedBan(source, targetId, category, nil, reason, evidence)
+    
+    if success then
+        TriggerClientEvent('notification', source, 
+            string.format("Issued %s ban to %s", category:upper(), GetPlayerName(targetId))
+        )
+    else
+        TriggerClientEvent('notification', source, "Ban failed: " .. status)
+    end
+end, true)
+```
+
+### Ban Statistics and Analytics
+```lua
+local banStatistics = {
+    totalBans = 0,
+    temporaryBans = 0,
+    permanentBans = 0,
+    categoryStats = {},
+    staffStats = {},
+    dailyStats = {}
+}
+
+-- Record ban statistics
+local function recordBanStatistics(staffId, targetId, duration, reason, category)
+    banStatistics.totalBans = banStatistics.totalBans + 1
+    
+    if duration == 0 then
+        banStatistics.permanentBans = banStatistics.permanentBans + 1
+    else
+        banStatistics.temporaryBans = banStatistics.temporaryBans + 1
+    end
+    
+    -- Category statistics
+    if category then
+        if not banStatistics.categoryStats[category] then
+            banStatistics.categoryStats[category] = 0
+        end
+        banStatistics.categoryStats[category] = banStatistics.categoryStats[category] + 1
+    end
+    
+    -- Staff statistics
+    local staffName = GetPlayerName(staffId)
+    if not banStatistics.staffStats[staffName] then
+        banStatistics.staffStats[staffName] = 0
+    end
+    banStatistics.staffStats[staffName] = banStatistics.staffStats[staffName] + 1
+    
+    -- Daily statistics
+    local today = os.date("%Y-%m-%d")
+    if not banStatistics.dailyStats[today] then
+        banStatistics.dailyStats[today] = 0
+    end
+    banStatistics.dailyStats[today] = banStatistics.dailyStats[today] + 1
+end
+
+-- Generate ban report
+RegisterCommand('banstats', function(source, args)
+    TriggerClientEvent('chat:addMessage', source, {
+        args = {"[Ban Statistics]", string.format("Total: %d | Temporary: %d | Permanent: %d", 
+               banStatistics.totalBans, banStatistics.temporaryBans, banStatistics.permanentBans)}
+    })
+    
+    -- Show today's statistics
+    local today = os.date("%Y-%m-%d")
+    local todayCount = banStatistics.dailyStats[today] or 0
+    TriggerClientEvent('chat:addMessage', source, {
+        args = {"[Today]", string.format("%d bans issued", todayCount)}
+    })
+    
+    -- Show top staff
+    local topStaff = {}
+    for staff, count in pairs(banStatistics.staffStats) do
+        table.insert(topStaff, {name = staff, count = count})
+    end
+    table.sort(topStaff, function(a, b) return a.count > b.count end)
+    
+    if topStaff[1] then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Most Active Staff]", string.format("%s: %d bans", topStaff[1].name, topStaff[1].count)}
+        })
+    end
+end, true)
+```
+
+## Error Handling
+
+Handle common scenarios when banning players:
+
+```lua
+local function safeBanPlayer(staffId, targetId, duration, reason)
+    -- Validate duration
+    if duration < 0 then
+        return false, "Duration cannot be negative"
+    end
+    
+    if duration > 31536000 then -- 1 year
+        return false, "Duration cannot exceed 1 year (31536000 seconds)"
+    end
+    
+    -- Validate reason
+    if not reason or string.len(reason) < 5 then
+        return false, "Ban reason must be at least 5 characters"
+    end
+    
+    if string.len(reason) > 1000 then
+        return false, "Ban reason too long (max 1000 characters)"
+    end
+    
+    -- Check if player exists
+    if not GetPlayerName(targetId) then
+        return false, "Target player not found"
+    end
+    
+    -- Prevent self-ban
+    if staffId == targetId then
+        return false, "Cannot ban yourself"
+    end
+    
+    -- Check if already banned
+    local isBanned = exports['zyrix_admin']:CheckBan(targetId)
+    if isBanned then
+        return false, "Player is already banned"
+    end
+    
+    -- Attempt ban
+    local success, status = exports['zyrix_admin']:BanPlayer(staffId, targetId, duration, reason)
+    
+    if not success then
+        local errorMessages = {
+            no_permission = "You don't have permission to ban players",
+            player_not_found = "Target player not found",
+            already_banned = "Player is already banned",
+            invalid_duration = "Invalid ban duration",
+            invalid_reason = "Invalid ban reason"
+        }
+        
+        local message = errorMessages[status] or ("Ban failed: " .. status)
+        TriggerClientEvent('notification', staffId, message)
+    else
+        -- Log successful ban
+        local durationText = duration == 0 and "permanent" or string.format("%d seconds", duration)
+        print(string.format("[BAN] %s banned %s for %s: %s", 
+              GetPlayerName(staffId), GetPlayerName(targetId), durationText, reason))
+    end
+    
+    return success, status
+end
+```
+
+<Warning>
+  Permanent bans (duration = 0) should be used carefully and only for serious violations. Always document the reason thoroughly.
+</Warning>
+
+<Tip>
+  Implement progressive ban systems and appeal processes to maintain fair moderation while protecting your server from repeat offenders.
+</Tip>

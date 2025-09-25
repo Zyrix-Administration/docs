@@ -1,0 +1,81 @@
+---
+title: "Visibility Functions"
+description: "Control player visibility for stealth administration and event management"
+---
+
+## ToggleInvisible
+
+Toggle invisibility for staff members with comprehensive stealth options.
+
+### Syntax
+```lua
+local success, status, invisible = exports['zyrix_admin']:ToggleInvisible(staffId, options)
+```
+
+### Options
+```lua
+{
+    hideFromPlayers = true,  -- Hide from regular players
+    hideFromStaff = false,   -- Hide from other staff
+    muteVoice = true,       -- Mute voice chat
+    hideBlips = true,       -- Hide radar blips
+    ghostMode = false       -- Complete ghost mode (no interactions)
+}
+```
+
+### Example
+```lua
+local options = {hideFromPlayers = true, muteVoice = true}
+local success, status, invisible = exports['zyrix_admin']:ToggleInvisible(source, options)
+
+if success then
+    local stateText = invisible and "invisible" or "visible"
+    TriggerClientEvent('notification', source, "You are now " .. stateText)
+end
+```
+
+## Advanced Examples
+
+### Stealth Monitoring System
+```lua
+local function enableStealthMode(staffId, targetId)
+    -- Make staff invisible and start spectating
+    local invisOptions = {
+        hideFromPlayers = true,
+        hideFromStaff = false,
+        muteVoice = true,
+        ghostMode = true
+    }
+    
+    local invisSuccess = exports['zyrix_admin']:ToggleInvisible(staffId, invisOptions)
+    local spectateSuccess = exports['zyrix_admin']:StartSpectating(staffId, targetId)
+    
+    if invisSuccess and spectateSuccess then
+        TriggerClientEvent('notification', staffId, 
+            string.format("Stealth monitoring %s", GetPlayerName(targetId))
+        )
+        return true
+    else
+        -- Cleanup on failure
+        exports['zyrix_admin']:ToggleInvisible(staffId, {})
+        return false
+    end
+end
+
+RegisterCommand('stealth', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/stealth <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    enableStealthMode(source, targetId)
+end, true)
+```

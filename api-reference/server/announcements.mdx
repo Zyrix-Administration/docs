@@ -1,0 +1,186 @@
+---
+title: "Server Announcements"
+description: "Broadcast messages and notifications to players with advanced formatting options"
+---
+
+## MakeAnnouncement
+
+Send server-wide announcements with customizable styling and targeting.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:MakeAnnouncement(staffId, message, options)
+```
+
+### Options
+```lua
+{
+    type = "info",           -- "info", "warning", "error", "success"
+    duration = 5000,         -- Display duration in milliseconds
+    position = "top",        -- "top", "center", "bottom"
+    sound = true,           -- Play notification sound
+    targetAll = true,       -- Send to all players
+    targetStaff = false,    -- Send only to staff
+    targetPlayers = {}      -- Specific player IDs
+}
+```
+
+### Example
+```lua
+local options = {
+    type = "warning",
+    duration = 10000,
+    sound = true
+}
+
+local success = exports['zyrix_admin']:MakeAnnouncement(source, "Server restart in 10 minutes!", options)
+
+if success then
+    print("Announcement sent successfully")
+end
+```
+
+## Advanced Examples
+
+### Scheduled Announcement System
+```lua
+local scheduledAnnouncements = {}
+
+local function scheduleAnnouncement(staffId, message, delaySeconds, options)
+    local announcementId = string.format("%d_%d", os.time(), math.random(1000))
+    
+    scheduledAnnouncements[announcementId] = {
+        staffId = staffId,
+        message = message,
+        options = options or {},
+        scheduleTime = os.time(),
+        delaySeconds = delaySeconds
+    }
+    
+    SetTimeout(delaySeconds * 1000, function()
+        if scheduledAnnouncements[announcementId] then
+            exports['zyrix_admin']:MakeAnnouncement(staffId, message, options)
+            scheduledAnnouncements[announcementId] = nil
+            
+            print(string.format("[SCHEDULED] Announcement sent: %s", message))
+        end
+    end)
+    
+    return announcementId
+end
+
+RegisterCommand('scheduleannounce', function(source, args)
+    if #args < 3 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/scheduleannounce <delay_seconds> <type> <message>"}
+        })
+        return
+    end
+    
+    local delay = tonumber(args[1])
+    local announcementType = args[2]
+    local message = table.concat(args, " ", 3)
+    
+    if not delay or delay <= 0 or delay > 3600 then
+        TriggerClientEvent('notification', source, "Delay must be between 1-3600 seconds")
+        return
+    end
+    
+    local options = {
+        type = announcementType,
+        duration = 8000,
+        sound = true
+    }
+    
+    local announcementId = scheduleAnnouncement(source, message, delay, options)
+    
+    TriggerClientEvent('notification', source, 
+        string.format("Announcement scheduled for %d seconds", delay)
+    )
+end, true)
+```
+
+### Multi-Language Announcement System
+```lua
+local languageMessages = {
+    restart_warning = {
+        en = "Server restart in %d minutes!",
+        es = "¡Reinicio del servidor en %d minutos!",
+        fr = "Redémarrage du serveur dans %d minutes!",
+        de = "Server-Neustart in %d Minuten!"
+    },
+    maintenance = {
+        en = "Server maintenance starting soon",
+        es = "Mantenimiento del servidor comenzando pronto",
+        fr = "Maintenance du serveur bientôt",
+        de = "Server-Wartung beginnt bald"
+    }
+}
+
+local function getPlayerLanguage(playerId)
+    -- Return player's preferred language (implement your method)
+    return GetConvar(string.format("player_%d_lang", playerId), "en")
+end
+
+local function sendMultiLanguageAnnouncement(staffId, messageKey, parameters, options)
+    local players = GetPlayers()
+    local translations = languageMessages[messageKey]
+    
+    if not translations then
+        return false, "Message key not found"
+    end
+    
+    for _, playerId in ipairs(players) do
+        local playerLang = getPlayerLanguage(playerId)
+        local template = translations[playerLang] or translations["en"] -- Fallback to English
+        local message = parameters and string.format(template, table.unpack(parameters)) or template
+        
+        -- Send individual announcement to player
+        local playerOptions = options or {}
+        playerOptions.targetAll = false
+        playerOptions.targetPlayers = {playerId}
+        
+        exports['zyrix_admin']:MakeAnnouncement(staffId, message, playerOptions)
+    end
+    
+    return true, "Multi-language announcement sent"
+end
+
+RegisterCommand('mlannounce', function(source, args)
+    if #args < 1 then
+        local keys = {}
+        for key, _ in pairs(languageMessages) do
+            table.insert(keys, key)
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/mlannounce <message_key> [parameters...]"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Available Keys]", table.concat(keys, ", ")}
+        })
+        return
+    end
+    
+    local messageKey = args[1]
+    local parameters = {}
+    
+    for i = 2, #args do
+        table.insert(parameters, args[i])
+    end
+    
+    local options = {
+        type = "info",
+        duration = 8000,
+        sound = true
+    }
+    
+    local success, status = sendMultiLanguageAnnouncement(source, messageKey, parameters, options)
+    
+    if success then
+        TriggerClientEvent('notification', source, "Multi-language announcement sent")
+    else
+        TriggerClientEvent('notification', source, "Failed: " .. status)
+    end
+end, true)
+```

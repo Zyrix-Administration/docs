@@ -1,0 +1,258 @@
+---
+title: "Unban Player"
+description: "Remove bans from players with comprehensive logging and verification"
+---
+
+## Overview
+
+The `UnbanPlayer` function allows staff members to remove existing bans from players. This function requires appropriate permissions and logs all unban actions for accountability.
+
+## UnbanPlayer
+
+Remove an existing ban from a player using their identifier.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:UnbanPlayer(staffId, identifier, reason)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member performing the unban
+- `identifier` (string) - Player identifier (Steam ID, Discord ID, etc.)
+- `reason` (string, optional) - Reason for the unban
+
+### Returns
+- `success` (boolean) - Whether the unban was successful
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'not_banned'`, `'invalid_identifier'`
+
+### Example
+```lua
+-- Unban player by Steam ID
+local steamId = "steam:1100001234567890"
+local success, status = exports['zyrix_admin']:UnbanPlayer(source, steamId, "Appeal approved")
+
+if success then
+    TriggerClientEvent('notification', source, "Player has been unbanned")
+    print(string.format("[UNBAN] %s unbanned %s", GetPlayerName(source), steamId))
+else
+    TriggerClientEvent('notification', source, "Unban failed: " .. status)
+end
+```
+
+## Advanced Examples
+
+### Unban with Player Lookup
+```lua
+local function unbanPlayerByName(staffId, playerName, reason)
+    -- Search for player in ban database by name
+    local bannedPlayers = exports['zyrix_admin']:SearchBannedPlayers(playerName)
+    
+    if not bannedPlayers or #bannedPlayers == 0 then
+        return false, "No banned players found with that name"
+    end
+    
+    if #bannedPlayers > 1 then
+        -- Multiple matches found
+        local names = {}
+        for i, player in ipairs(bannedPlayers) do
+            table.insert(names, string.format("%d: %s (%s)", i, player.name, player.identifier))
+        end
+        
+        TriggerClientEvent('chat:addMessage', staffId, {
+            args = {"[Multiple Matches]", table.concat(names, ", ")}
+        })
+        return false, "Multiple players found. Use /unbanid <number> to select specific player"
+    end
+    
+    -- Single match found
+    local player = bannedPlayers[1]
+    local success, status = exports['zyrix_admin']:UnbanPlayer(staffId, player.identifier, reason)
+    
+    if success then
+        TriggerClientEvent('notification', staffId, 
+            string.format("Unbanned %s (%s)", player.name, player.identifier)
+        )
+    end
+    
+    return success, status
+end
+
+RegisterCommand('unbanname', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/unbanname <player_name> [reason]"}
+        })
+        return
+    end
+    
+    local playerName = args[1]
+    local reason = #args > 1 and table.concat(args, " ", 2) or "No reason specified"
+    
+    unbanPlayerByName(source, playerName, reason)
+end, true)
+```
+
+### Mass Unban System
+```lua
+local function massUnbanByCategory(staffId, category, reason)
+    local bannedPlayers = exports['zyrix_admin']:GetBannedPlayersByCategory(category)
+    local unbanned = 0
+    local failed = 0
+    
+    if not bannedPlayers or #bannedPlayers == 0 then
+        return false, "No banned players found in category: " .. category
+    end
+    
+    for _, player in ipairs(bannedPlayers) do
+        local success = exports['zyrix_admin']:UnbanPlayer(staffId, player.identifier, reason)
+        if success then
+            unbanned = unbanned + 1
+        else
+            failed = failed + 1
+        end
+    end
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Mass unban completed: %d unbanned, %d failed", unbanned, failed)
+    )
+    
+    -- Log mass unban
+    print(string.format("[MASS UNBAN] %s unbanned %d players from category '%s'", 
+          GetPlayerName(staffId), unbanned, category))
+    
+    return true, string.format("Unbanned %d players", unbanned)
+end
+
+RegisterCommand('massunban', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/massunban <category> <reason>"}
+        })
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Categories]", "temp, cheating, rdm, harassment, griefing"}
+        })
+        return
+    end
+    
+    local category = args[1]
+    local reason = table.concat(args, " ", 2)
+    
+    massUnbanByCategory(source, category, reason)
+end, true)
+```
+
+### Temporary Unban (Probation System)
+```lua
+local probationSystem = {
+    probationPeriod = 604800, -- 1 week in seconds
+    activeProbations = {}
+}
+
+local function temporaryUnban(staffId, identifier, probationDays, reason)
+    -- Unban the player
+    local success, status = exports['zyrix_admin']:UnbanPlayer(staffId, identifier, reason)
+    
+    if not success then
+        return false, status
+    end
+    
+    -- Add to probation system
+    local probationEnd = os.time() + (probationDays * 86400)
+    probationSystem.activeProbations[identifier] = {
+        staffId = staffId,
+        startTime = os.time(),
+        endTime = probationEnd,
+        reason = reason,
+        originalBanReason = "Retrieved from ban history" -- Would get actual reason
+    }
+    
+    -- Schedule automatic reban if violations occur
+    SetTimeout((probationDays * 86400) * 1000, function()
+        if probationSystem.activeProbations[identifier] then
+            -- Probation ended successfully
+            probationSystem.activeProbations[identifier] = nil
+            print(string.format("[PROBATION COMPLETED] %s completed probation period", identifier))
+        end
+    end)
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Player unbanned with %d day probation period", probationDays)
+    )
+    
+    return true, "Temporary unban with probation applied"
+end
+
+-- Check if player is on probation
+local function isOnProbation(identifier)
+    local probation = probationSystem.activeProbations[identifier]
+    if probation and os.time() < probation.endTime then
+        return true, probation
+    elseif probation then
+        -- Probation expired, clean up
+        probationSystem.activeProbations[identifier] = nil
+    end
+    return false, nil
+end
+
+RegisterCommand('tempunban', function(source, args)
+    if #args < 3 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/tempunban <identifier> <probation_days> <reason>"}
+        })
+        return
+    end
+    
+    local identifier = args[1]
+    local probationDays = tonumber(args[2])
+    local reason = table.concat(args, " ", 3)
+    
+    if not probationDays or probationDays <= 0 or probationDays > 30 then
+        TriggerClientEvent('notification', source, "Probation days must be between 1-30")
+        return
+    end
+    
+    temporaryUnban(source, identifier, probationDays, reason)
+end, true)
+```
+
+## Error Handling
+
+```lua
+local function safeUnbanPlayer(staffId, identifier, reason)
+    -- Validate identifier format
+    if not identifier or string.len(identifier) < 10 then
+        return false, "Invalid identifier format"
+    end
+    
+    -- Check if identifier format is valid (Steam, Discord, etc.)
+    local validFormats = {"steam:", "discord:", "license:", "fivem:"}
+    local isValidFormat = false
+    
+    for _, format in ipairs(validFormats) do
+        if string.find(identifier, format) then
+            isValidFormat = true
+            break
+        end
+    end
+    
+    if not isValidFormat then
+        return false, "Identifier must be steam:, discord:, license:, or fivem: format"
+    end
+    
+    -- Check if player is actually banned
+    local isBanned = exports['zyrix_admin']:CheckBanByIdentifier(identifier)
+    if not isBanned then
+        return false, "Player is not currently banned"
+    end
+    
+    -- Attempt unban
+    local success, status = exports['zyrix_admin']:UnbanPlayer(staffId, identifier, reason)
+    
+    if success then
+        print(string.format("[UNBAN] %s unbanned %s: %s", 
+              GetPlayerName(staffId), identifier, reason or "No reason specified"))
+    end
+    
+    return success, status
+end
+```

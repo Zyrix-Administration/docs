@@ -1,0 +1,113 @@
+---
+title: "Noclip Functions"
+description: "Advanced noclip capabilities for staff movement and exploration"
+---
+
+## ToggleNoclip
+
+Toggle noclip mode for staff members with customizable speed and settings.
+
+### Syntax
+```lua
+local success, status, enabled = exports['zyrix_admin']:ToggleNoclip(staffId, settings)
+```
+
+### Settings
+```lua
+{
+    speed = 1.0,        -- Movement speed multiplier (0.1 - 5.0)
+    invisible = false,  -- Whether to make player invisible during noclip
+    collision = false   -- Whether to disable collision detection
+}
+```
+
+### Example
+```lua
+local settings = {speed = 2.0, invisible = true}
+local success, status, enabled = exports['zyrix_admin']:ToggleNoclip(source, settings)
+
+if success then
+    local stateText = enabled and "enabled" or "disabled"
+    TriggerClientEvent('notification', source, "Noclip " .. stateText)
+end
+```
+
+## SetNoclipSpeed
+
+Adjust noclip movement speed for active noclip users.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:SetNoclipSpeed(staffId, speed)
+```
+
+## Advanced Examples
+
+### Noclip Zone System
+```lua
+local noclipZones = {
+    ["admin_area"] = {
+        center = vector3(0.0, 0.0, 100.0),
+        radius = 50.0,
+        autoEnable = true,
+        speed = 1.5
+    }
+}
+
+-- Monitor players for noclip zones
+CreateThread(function()
+    while true do
+        Wait(1000)
+        
+        local players = GetPlayers()
+        for _, playerId in ipairs(players) do
+            if exports['zyrix_admin']:IsStaffMember(playerId) then
+                local playerCoords = GetEntityCoords(GetPlayerPed(playerId))
+                
+                for zoneName, zone in pairs(noclipZones) do
+                    local distance = #(playerCoords - zone.center)
+                    
+                    if distance <= zone.radius then
+                        -- Player entered noclip zone
+                        if zone.autoEnable then
+                            local settings = {speed = zone.speed}
+                            exports['zyrix_admin']:ToggleNoclip(playerId, settings)
+                            
+                            TriggerClientEvent('notification', playerId, 
+                                string.format("Entered noclip zone: %s", zoneName)
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+```
+
+### Mass Noclip Control
+```lua
+local function toggleMassNoclip(staffId, enable, targetStaff)
+    local staff = exports['zyrix_admin']:GetOnlineStaff()
+    local affected = 0
+    
+    for _, targetStaffId in ipairs(staff) do
+        if not targetStaff or targetStaffId ~= staffId then
+            local success = exports['zyrix_admin']:ToggleNoclip(targetStaffId, {speed = 1.0})
+            if success then
+                affected = affected + 1
+            end
+        end
+    end
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Mass noclip %s for %d staff members", 
+                     enable and "enabled" or "toggled", affected)
+    )
+end
+
+RegisterCommand('massnoclip', function(source, args)
+    local enable = args[1] and args[1]:lower() == "on"
+    toggleMassNoclip(source, enable, false)
+end, true)
+```

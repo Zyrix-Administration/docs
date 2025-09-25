@@ -1,0 +1,566 @@
+---
+title: "Kick Player"
+description: "Remove players from the server with comprehensive logging and notification systems"
+---
+
+## Overview
+
+The `KickPlayer` function allows staff members to remove players from the server immediately. All kicks are logged and can trigger webhook notifications if configured.
+
+## KickPlayer
+
+Remove a player from the server with a specified reason.
+
+### Syntax
+```lua
+local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+```
+
+### Parameters
+- `staffId` (number) - Server ID of the staff member performing the kick
+- `targetId` (number) - Server ID of the player to kick
+- `reason` (string) - Reason for the kick (minimum 3 characters)
+
+### Returns
+- `success` (boolean) - Whether the kick was successful
+- `status` (string) - Status code: `'success'`, `'no_permission'`, `'player_not_found'`, `'invalid_target'`, `'invalid_reason'`
+
+### Example
+```lua
+-- Kick player for AFK
+local success, status = exports['zyrix_admin']:KickPlayer(source, targetId, "AFK for extended period")
+
+if success then
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = {255, 165, 0},
+        multiline = false,
+        args = {"[Kick]", string.format("%s was kicked: %s", GetPlayerName(targetId), reason)}
+    })
+else
+    TriggerClientEvent('notification', source, "Kick failed: " .. status)
+end
+```
+
+## Advanced Examples
+
+### Kick with Warning Integration
+```lua
+local function kickWithWarning(staffId, targetId, reason, issueWarning)
+    -- Optional: Issue warning before kick
+    if issueWarning then
+        local warnSuccess = exports['zyrix_admin']:WarnPlayer(staffId, targetId, "Kicked: " .. reason)
+        if warnSuccess then
+            print(string.format("Warning issued to %s before kick", GetPlayerName(targetId)))
+        end
+    end
+    
+    -- Proceed with kick
+    local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+    
+    if success then
+        -- Notify remaining players
+        TriggerClientEvent('chat:addMessage', -1, {
+            color = {255, 140, 0},
+            multiline = false,
+            args = {"[Admin]", string.format("Player kicked for: %s", reason)}
+        })
+        
+        -- Log detailed information
+        print(string.format("[KICK] Staff: %s | Target: %s | Reason: %s | Warning: %s", 
+              GetPlayerName(staffId), GetPlayerName(targetId), reason, issueWarning and "Yes" or "No"))
+    end
+    
+    return success, status
+end
+
+-- Command with warning option
+RegisterCommand('kickwarn', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/kickwarn <player_id> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local reason = table.concat(args, " ", 2)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    kickWithWarning(source, targetId, reason, true)
+end, true)
+```
+
+### Scheduled Kick System
+```lua
+local scheduledKicks = {}
+
+local function scheduleKick(staffId, targetId, reason, delaySeconds, notifyPlayer)
+    -- Check if player already has scheduled kick
+    if scheduledKicks[targetId] then
+        return false, "Player already has a scheduled kick"
+    end
+    
+    -- Notify target player if requested
+    if notifyPlayer then
+        TriggerClientEvent('chat:addMessage', targetId, {
+            color = {255, 0, 0},
+            multiline = false,
+            args = {"[Warning]", string.format("You will be kicked in %d seconds: %s", delaySeconds, reason)}
+        })
+    end
+    
+    -- Store kick info
+    scheduledKicks[targetId] = {
+        staffId = staffId,
+        reason = reason,
+        scheduleTime = os.time(),
+        delaySeconds = delaySeconds
+    }
+    
+    -- Schedule the kick
+    SetTimeout(delaySeconds * 1000, function()
+        -- Check if player is still online and kick is still scheduled
+        if GetPlayerName(targetId) and scheduledKicks[targetId] then
+            local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+            
+            if success then
+                print(string.format("[SCHEDULED KICK] %s kicked %s after %d second delay", 
+                      GetPlayerName(staffId), GetPlayerName(targetId), delaySeconds))
+            end
+            
+            scheduledKicks[targetId] = nil
+        end
+    end)
+    
+    -- Notify staff member
+    TriggerClientEvent('notification', staffId, 
+        string.format("Kick scheduled for %s in %d seconds", GetPlayerName(targetId), delaySeconds)
+    )
+    
+    return true, "success"
+end
+
+local function cancelScheduledKick(staffId, targetId)
+    if not scheduledKicks[targetId] then
+        return false, "No scheduled kick found for player"
+    end
+    
+    scheduledKicks[targetId] = nil
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Cancelled scheduled kick for %s", GetPlayerName(targetId))
+    )
+    TriggerClientEvent('notification', targetId, "Your scheduled kick has been cancelled")
+    
+    return true, "success"
+end
+
+-- Commands for scheduled kicks
+RegisterCommand('skick', function(source, args)
+    if #args < 3 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/skick <player_id> <seconds> <reason>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local delay = tonumber(args[2])
+    local reason = table.concat(args, " ", 3)
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    if not delay or delay <= 0 or delay > 300 then
+        TriggerClientEvent('notification', source, "Delay must be between 1-300 seconds")
+        return
+    end
+    
+    scheduleKick(source, targetId, reason, delay, true)
+end, true)
+
+RegisterCommand('cancelkick', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/cancelkick <player_id>"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    if not targetId then
+        TriggerClientEvent('notification', source, "Invalid player ID")
+        return
+    end
+    
+    cancelScheduledKick(source, targetId)
+end, true)
+
+-- Clean up on player disconnect
+AddEventHandler('playerDropped', function()
+    local playerId = source
+    if scheduledKicks[playerId] then
+        scheduledKicks[playerId] = nil
+    end
+end)
+```
+
+### Mass Kick System
+```lua
+local function massKick(staffId, criteria, reason, excludeStaff)
+    local playersToKick = {}
+    local players = GetPlayers()
+    
+    -- Determine which players to kick based on criteria
+    for _, playerId in ipairs(players) do
+        local shouldKick = false
+        
+        -- Skip the staff member performing the action
+        if playerId == staffId then
+            goto continue
+        end
+        
+        -- Skip staff if requested
+        if excludeStaff and exports['zyrix_admin']:IsStaffMember(playerId) then
+            goto continue
+        end
+        
+        -- Apply criteria
+        if criteria.type == "all" then
+            shouldKick = true
+        elseif criteria.type == "ping" and criteria.threshold then
+            local playerPing = GetPlayerPing(playerId)
+            shouldKick = playerPing > criteria.threshold
+        elseif criteria.type == "playtime" and criteria.maxMinutes then
+            -- Assuming you have a playtime tracking system
+            local playtime = GetPlayerPlaytime(playerId) or 0
+            shouldKick = playtime < (criteria.maxMinutes * 60)
+        elseif criteria.type == "warnings" and criteria.minWarnings then
+            local warnSuccess, _, warnings = exports['zyrix_admin']:FetchWarnings(playerId)
+            if warnSuccess and warnings then
+                shouldKick = #warnings >= criteria.minWarnings
+            end
+        end
+        
+        if shouldKick then
+            table.insert(playersToKick, playerId)
+        end
+        
+        ::continue::
+    end
+    
+    -- Execute kicks
+    local kickedCount = 0
+    for _, playerId in ipairs(playersToKick) do
+        local success = exports['zyrix_admin']:KickPlayer(staffId, playerId, reason)
+        if success then
+            kickedCount = kickedCount + 1
+        end
+    end
+    
+    -- Notify staff and server
+    TriggerClientEvent('notification', staffId, 
+        string.format("Mass kick completed: %d players kicked", kickedCount)
+    )
+    
+    if kickedCount > 0 then
+        TriggerClientEvent('chat:addMessage', -1, {
+            color = {255, 0, 0},
+            multiline = false,
+            args = {"[Server]", string.format("Mass kick executed: %s", reason)}
+        })
+    end
+    
+    return kickedCount
+end
+
+-- Commands for mass kicks
+RegisterCommand('masskick', function(source, args)
+    if #args < 1 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/masskick <reason>"}
+        })
+        return
+    end
+    
+    local reason = table.concat(args, " ")
+    local kickedCount = massKick(source, {type = "all"}, reason, true)
+    
+    print(string.format("[MASS KICK] %s kicked %d players: %s", 
+          GetPlayerName(source), kickedCount, reason))
+end, true)
+
+RegisterCommand('kickhighping', function(source, args)
+    local threshold = tonumber(args[1]) or 200
+    local reason = #args > 1 and table.concat(args, " ", 2) or "High ping"
+    
+    local kickedCount = massKick(source, {type = "ping", threshold = threshold}, reason, true)
+    
+    TriggerClientEvent('notification', source, 
+        string.format("Kicked %d players with ping > %dms", kickedCount, threshold)
+    )
+end, true)
+```
+
+### Kick Prevention System
+```lua
+local kickProtection = {
+    immunePlayers = {}, -- Player IDs with temporary immunity
+    vipProtection = true, -- Protect VIP players
+    newPlayerProtection = 30, -- Minutes of protection for new players
+}
+
+-- Check if player should be protected from kicks
+local function isPlayerProtected(playerId, staffId)
+    -- Check immunity list
+    if kickProtection.immunePlayers[playerId] then
+        local immunity = kickProtection.immunePlayers[playerId]
+        if os.time() < immunity.expireTime then
+            return true, string.format("Player has immunity until %s", 
+                   os.date("%H:%M:%S", immunity.expireTime))
+        else
+            kickProtection.immunePlayers[playerId] = nil
+        end
+    end
+    
+    -- Check VIP protection
+    if kickProtection.vipProtection and IsPlayerVIP(playerId) then
+        -- Only higher staff can kick VIP players
+        local staffRank = GetStaffRank(staffId)
+        if staffRank < 3 then -- Assuming rank 3+ can kick VIPs
+            return true, "VIP players can only be kicked by senior staff"
+        end
+    end
+    
+    -- Check new player protection
+    if kickProtection.newPlayerProtection > 0 then
+        local joinTime = GetPlayerJoinTime(playerId)
+        if joinTime and (os.time() - joinTime) < (kickProtection.newPlayerProtection * 60) then
+            return true, string.format("New player protection active for %d more minutes", 
+                   math.ceil((kickProtection.newPlayerProtection * 60 - (os.time() - joinTime)) / 60))
+        end
+    end
+    
+    return false, nil
+end
+
+-- Enhanced kick function with protection
+local function protectedKick(staffId, targetId, reason)
+    local isProtected, protectionReason = isPlayerProtected(targetId, staffId)
+    
+    if isProtected then
+        TriggerClientEvent('notification', staffId, "Cannot kick player: " .. protectionReason)
+        return false, "player_protected"
+    end
+    
+    return exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+end
+
+-- Grant temporary immunity
+local function grantKickImmunity(staffId, targetId, minutes, reason)
+    kickProtection.immunePlayers[targetId] = {
+        grantedBy = staffId,
+        reason = reason,
+        expireTime = os.time() + (minutes * 60)
+    }
+    
+    TriggerClientEvent('notification', targetId, 
+        string.format("You have been granted %d minutes of kick immunity", minutes)
+    )
+    TriggerClientEvent('notification', staffId, 
+        string.format("Granted %d minutes kick immunity to %s", minutes, GetPlayerName(targetId))
+    )
+end
+
+-- Commands for protection system
+RegisterCommand('immunity', function(source, args)
+    if #args < 2 then
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Usage]", "/immunity <player_id> <minutes> [reason]"}
+        })
+        return
+    end
+    
+    local targetId = tonumber(args[1])
+    local minutes = tonumber(args[2])
+    local reason = #args > 2 and table.concat(args, " ", 3) or "Administrative protection"
+    
+    if not targetId or not GetPlayerName(targetId) then
+        TriggerClientEvent('notification', source, "Player not found")
+        return
+    end
+    
+    if not minutes or minutes <= 0 or minutes > 120 then
+        TriggerClientEvent('notification', source, "Minutes must be between 1-120")
+        return
+    end
+    
+    grantKickImmunity(source, targetId, minutes, reason)
+end, true)
+```
+
+### Kick Analytics and Reporting
+```lua
+local kickAnalytics = {
+    dailyKicks = {},
+    staffActivity = {},
+    reasonFrequency = {}
+}
+
+-- Record kick for analytics
+local function recordKick(staffId, targetId, reason)
+    local today = os.date("%Y-%m-%d")
+    local hour = tonumber(os.date("%H"))
+    
+    -- Daily kick tracking
+    if not kickAnalytics.dailyKicks[today] then
+        kickAnalytics.dailyKicks[today] = {}
+    end
+    if not kickAnalytics.dailyKicks[today][hour] then
+        kickAnalytics.dailyKicks[today][hour] = 0
+    end
+    kickAnalytics.dailyKicks[today][hour] = kickAnalytics.dailyKicks[today][hour] + 1
+    
+    -- Staff activity tracking
+    local staffName = GetPlayerName(staffId)
+    if not kickAnalytics.staffActivity[staffName] then
+        kickAnalytics.staffActivity[staffName] = 0
+    end
+    kickAnalytics.staffActivity[staffName] = kickAnalytics.staffActivity[staffName] + 1
+    
+    -- Reason frequency tracking
+    local lowerReason = reason:lower()
+    if not kickAnalytics.reasonFrequency[lowerReason] then
+        kickAnalytics.reasonFrequency[lowerReason] = 0
+    end
+    kickAnalytics.reasonFrequency[lowerReason] = kickAnalytics.reasonFrequency[lowerReason] + 1
+end
+
+-- Hook into kick function
+local originalKick = exports['zyrix_admin'].KickPlayer
+local function analyticsKick(staffId, targetId, reason)
+    local success, status = originalKick(staffId, targetId, reason)
+    
+    if success then
+        recordKick(staffId, targetId, reason)
+    end
+    
+    return success, status
+end
+
+-- Replace the export with analytics version
+exports('KickPlayer', analyticsKick)
+
+-- Generate kick report
+RegisterCommand('kickreport', function(source, args)
+    local today = os.date("%Y-%m-%d")
+    local todayKicks = kickAnalytics.dailyKicks[today]
+    
+    if todayKicks then
+        local totalToday = 0
+        for hour, count in pairs(todayKicks) do
+            totalToday = totalToday + count
+        end
+        
+        TriggerClientEvent('chat:addMessage', source, {
+            args = {"[Kick Report]", string.format("Today: %d kicks", totalToday)}
+        })
+        
+        -- Show most active staff
+        local topStaff = {}
+        for staff, count in pairs(kickAnalytics.staffActivity) do
+            table.insert(topStaff, {name = staff, count = count})
+        end
+        table.sort(topStaff, function(a, b) return a.count > b.count end)
+        
+        if topStaff[1] then
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Most Active]", string.format("%s: %d kicks", topStaff[1].name, topStaff[1].count)}
+            })
+        end
+        
+        -- Show most common reasons
+        local topReasons = {}
+        for reason, count in pairs(kickAnalytics.reasonFrequency) do
+            table.insert(topReasons, {reason = reason, count = count})
+        end
+        table.sort(topReasons, function(a, b) return a.count > b.count end)
+        
+        if topReasons[1] then
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {"[Top Reason]", string.format("%s: %d times", topReasons[1].reason, topReasons[1].count)}
+            })
+        end
+    else
+        TriggerClientEvent('notification', source, "No kicks recorded today")
+    end
+end, true)
+```
+
+## Error Handling
+
+Handle common scenarios when kicking players:
+
+```lua
+local function safeKickPlayer(staffId, targetId, reason)
+    -- Validate reason
+    if not reason or string.len(reason) < 3 then
+        return false, "Kick reason must be at least 3 characters"
+    end
+    
+    if string.len(reason) > 200 then
+        return false, "Kick reason too long (max 200 characters)"
+    end
+    
+    -- Check if player exists
+    if not GetPlayerName(targetId) then
+        return false, "Target player not found"
+    end
+    
+    -- Prevent self-kick
+    if staffId == targetId then
+        return false, "Cannot kick yourself"
+    end
+    
+    -- Check for protection
+    local isProtected, protectionReason = isPlayerProtected(targetId, staffId)
+    if isProtected then
+        return false, protectionReason
+    end
+    
+    -- Attempt kick
+    local success, status = exports['zyrix_admin']:KickPlayer(staffId, targetId, reason)
+    
+    if not success then
+        local errorMessages = {
+            no_permission = "You don't have permission to kick players",
+            player_not_found = "Target player not found",
+            invalid_target = "Invalid player ID",
+            invalid_reason = "Invalid kick reason"
+        }
+        
+        local message = errorMessages[status] or ("Kick failed: " .. status)
+        TriggerClientEvent('notification', staffId, message)
+    else
+        -- Log successful kick
+        print(string.format("[KICK] %s kicked %s: %s", 
+              GetPlayerName(staffId), GetPlayerName(targetId), reason))
+    end
+    
+    return success, status
+end
+```
+
+<Warning>
+  Kicks immediately remove players from the server. Always ensure you have proper justification and consider using warnings for minor infractions.
+</Warning>
+
+<Tip>
+  Implement kick protection systems for VIP players or new players to prevent accidental removals and improve server experience.
+</Tip>

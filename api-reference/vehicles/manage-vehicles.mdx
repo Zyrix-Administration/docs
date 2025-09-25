@@ -1,0 +1,136 @@
+---
+title: "Vehicle Management"
+description: "Comprehensive vehicle management tools and utilities"
+---
+
+## Overview
+
+Advanced vehicle management functions for server administrators including bulk operations, vehicle tracking, and maintenance tools.
+
+## GetPlayerVehicles
+
+Retrieve all vehicles owned or recently used by a player.
+
+### Syntax
+```lua
+local success, status, vehicles = exports['zyrix_admin']:GetPlayerVehicles(playerId)
+```
+
+### Returns
+- `vehicles` (table) - Array of vehicle objects with network IDs and metadata
+
+## Advanced Examples
+
+### Mass Vehicle Operations
+```lua
+-- Delete all vehicles in radius
+local function deleteVehiclesInArea(staffId, coords, radius)
+    local vehicles = GetVehiclesInArea(coords, radius)
+    local deleted = 0
+    
+    for _, vehicle in ipairs(vehicles) do
+        local netId = NetworkGetNetworkIdFromEntity(vehicle)
+        local success = exports['zyrix_admin']:DeleteVehicle(staffId, netId)
+        if success then deleted = deleted + 1 end
+    end
+    
+    return deleted
+end
+
+-- Repair all vehicles in area
+local function repairVehiclesInArea(staffId, coords, radius)
+    local vehicles = GetVehiclesInArea(coords, radius)
+    local repaired = 0
+    
+    for _, vehicle in ipairs(vehicles) do
+        local netId = NetworkGetNetworkIdFromEntity(vehicle)
+        local success = exports['zyrix_admin']:RepairVehicle(staffId, netId)
+        if success then repaired = repaired + 1 end
+    end
+    
+    return repaired
+end
+
+RegisterCommand('cleanaarea', function(source, args)
+    local radius = tonumber(args[1]) or 50
+    local playerCoords = GetEntityCoords(GetPlayerPed(source))
+    
+    local deleted = deleteVehiclesInArea(source, playerCoords, radius)
+    TriggerClientEvent('notification', source, 
+        string.format("Deleted %d vehicles in %dm radius", deleted, radius)
+    )
+end, true)
+
+RegisterCommand('repairarea', function(source, args)
+    local radius = tonumber(args[1]) or 50
+    local playerCoords = GetEntityCoords(GetPlayerPed(source))
+    
+    local repaired = repairVehiclesInArea(source, playerCoords, radius)
+    TriggerClientEvent('notification', source, 
+        string.format("Repaired %d vehicles in %dm radius", repaired, radius)
+    )
+end, true)
+```
+
+### Vehicle Tracking System
+```lua
+local trackedVehicles = {}
+
+local function trackVehicle(staffId, vehicleNetId, duration)
+    local trackingId = string.format("%d_%d", vehicleNetId, os.time())
+    
+    trackedVehicles[trackingId] = {
+        netId = vehicleNetId,
+        staffId = staffId,
+        startTime = os.time(),
+        duration = duration,
+        positions = {}
+    }
+    
+    -- Store position every 30 seconds
+    SetTimeout(30000, function()
+        local function updatePosition()
+            if trackedVehicles[trackingId] then
+                local vehicle = NetworkGetEntityFromNetworkId(vehicleNetId)
+                if DoesEntityExist(vehicle) then
+                    local coords = GetEntityCoords(vehicle)
+                    table.insert(trackedVehicles[trackingId].positions, {
+                        coords = coords,
+                        timestamp = os.time()
+                    })
+                    
+                    -- Continue tracking if duration not exceeded
+                    if os.time() - trackedVehicles[trackingId].startTime < duration then
+                        SetTimeout(30000, updatePosition)
+                    else
+                        -- Generate tracking report
+                        generateTrackingReport(staffId, trackingId)
+                        trackedVehicles[trackingId] = nil
+                    end
+                else
+                    trackedVehicles[trackingId] = nil
+                end
+            end
+        end
+        updatePosition()
+    end)
+    
+    return trackingId
+end
+
+function generateTrackingReport(staffId, trackingId)
+    local track = trackedVehicles[trackingId]
+    if not track then return end
+    
+    local totalDistance = 0
+    for i = 2, #track.positions do
+        local dist = #(track.positions[i].coords - track.positions[i-1].coords)
+        totalDistance = totalDistance + dist
+    end
+    
+    TriggerClientEvent('notification', staffId, 
+        string.format("Vehicle tracked for %d minutes, traveled %.1f meters", 
+                     (os.time() - track.startTime) / 60, totalDistance)
+    )
+end
+```
