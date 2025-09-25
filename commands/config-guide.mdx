@@ -1,0 +1,74 @@
+---
+title: "Command Configuration"
+description: "Learn how to configure commands the way you want."
+---
+
+## Configuration Interface
+
+Each command in the configuration panel displays:
+
+1. **Toggle Switch**: Enable or disable the command
+2. **Command Input**: Customize the command name
+3. **Description**: Explanation of what the command does
+
+When a command is disabled:
+- The toggle switch turns off
+- The command input field becomes disabled
+- The command will not be registered on the server
+
+## Best Practices
+
+### Command Naming
+- Use clear, memorable command names
+- Avoid conflicts with existing server commands
+- Consider your community's language and preferences
+
+### Security Considerations
+- Disable destructive commands like `kickall` unless absolutely necessary
+- Review permissions for each command based on staff roles
+- Test commands in a development environment first
+
+### Performance Tips
+- Disable unused commands to reduce server load
+- Use the "Only Missing" setting to avoid command conflicts
+- Regularly review and update your command configuration
+
+## Export/Import Configuration
+
+The configuration can be exported as JSON for backup or sharing:
+
+```json
+{
+  "commands": {
+    "enable": true,
+    "skipRegistered": true,
+    "ban": { "enabled": true, "command": "ban" },
+    "kick": { "enabled": true, "command": "kick" },
+    // ... all other commands
+  }
+}
+```
+
+This allows for:
+- **Backup**: Save your configuration settings
+- **Sharing**: Share configurations between servers
+- **Version Control**: Track changes to your setup
+- **Migration**: Move settings to new servers
+
+## Troubleshooting
+
+### Commands Not Working
+1. Check if "Commands Enabled" is turned on
+2. Verify the specific command is enabled
+3. Ensure no command name conflicts exist
+4. Review server console for error messages
+
+### Command Conflicts
+1. Enable "Only Missing" to skip existing commands
+2. Use unique command names
+3. Check for conflicts with other resources
+
+### Permission Issues
+1. Verify staff permissions in the Permissions section
+2. Check role assignments for command access
+3. Review server-side permission configurations

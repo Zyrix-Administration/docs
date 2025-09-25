@@ -1,0 +1,552 @@
+---
+title: "Getting Started"
+description: "Setup and configure commands for Zyrix to run on your server."
+---
+# Commands Configuration
+
+The Commands section in Zyrix Configuration allows you to enable, disable, and customize all administrative commands available to your staff members. Each command can be individually controlled with a toggle switch and custom command name.
+
+## Overview
+
+The commands system provides granular control over administrative functionality, allowing server owners to:
+
+- **Enable/Disable Commands**: Toggle individual commands on or off
+- **Customize Command Names**: Change the default command names to match your server's preferences
+- **Bulk Control**: Enable or disable all commands at once
+- **Registration Control**: Choose whether to skip already registered commands
+
+## Global Settings
+
+### Commands Enabled
+**Type:** Switch  
+**Default:** `true`
+
+Master switch for all Zyrix commands. When disabled, no commands will be registered on your server.
+
+```json
+{
+  "commands": {
+    "enable": true
+  }
+}
+```
+
+### Only Missing
+**Type:** Switch  
+**Default:** `true`
+
+When enabled, Zyrix will only register commands that don't already exist. This prevents overriding existing server commands with the same name.
+This is especially useful if your server has custom commands pre-integrated.
+
+```json
+{
+  "commands": {
+    "skipRegistered": true
+  }
+}
+```
+
+## Command Categories
+
+### Player Management Commands
+
+#### Ban Command
+**Default Command:** `ban`  
+**Purpose:** Remove players permanently from the server
+
+```json
+{
+  "commands": {
+    "ban": {
+      "enabled": true,
+      "command": "ban"
+    }
+  }
+}
+```
+
+#### Kick Command
+**Default Command:** `kick`  
+**Purpose:** Remove players temporarily from the server
+
+```json
+{
+  "commands": {
+    "kick": {
+      "enabled": true,
+      "command": "kick"
+    }
+  }
+}
+```
+
+#### Kill Command
+**Default Command:** `kill`  
+**Purpose:** Eliminate a player instantly
+
+```json
+{
+  "commands": {
+    "kill": {
+      "enabled": true,
+      "command": "kill"
+    }
+  }
+}
+```
+
+#### Warn Command
+**Default Command:** `warn`  
+**Purpose:** Record infractions against players
+
+```json
+{
+  "commands": {
+    "warn": {
+      "enabled": true,
+      "command": "warn"
+    }
+  }
+}
+```
+
+#### Unban Command
+**Default Command:** `unban`  
+**Purpose:** Remove bans from players
+
+```json
+{
+  "commands": {
+    "unban": {
+      "enabled": true,
+      "command": "unban"
+    }
+  }
+}
+```
+
+### Movement & Control Commands
+
+#### Freeze Command
+**Default Command:** `freeze`  
+**Purpose:** Lock a player in place
+
+```json
+{
+  "commands": {
+    "freeze": {
+      "enabled": true,
+      "command": "freeze"
+    }
+  }
+}
+```
+
+#### Unfreeze Command
+**Default Command:** `unfreeze`  
+**Purpose:** Unlock a frozen player
+
+```json
+{
+  "commands": {
+    "unfreeze": {
+      "enabled": true,
+      "command": "unfreeze"
+    }
+  }
+}
+```
+
+#### Spectate Command
+**Default Command:** `spectate`  
+**Purpose:** Watch players from their perspective
+
+```json
+{
+  "commands": {
+    "spectate": {
+      "enabled": true,
+      "command": "spectate"
+    }
+  }
+}
+```
+
+### Teleportation Commands
+
+#### Goto Command
+**Default Command:** `goto`  
+**Purpose:** Teleport to a specific player
+
+```json
+{
+  "commands": {
+    "goto": {
+      "enabled": true,
+      "command": "goto"
+    }
+  }
+}
+```
+
+#### Bring Command
+**Default Command:** `bring`  
+**Purpose:** Teleport a player to your location
+
+```json
+{
+  "commands": {
+    "bring": {
+      "enabled": true,
+      "command": "bring"
+    }
+  }
+}
+```
+
+#### Teleport Command
+**Default Command:** `tp`  
+**Purpose:** Teleport to specific coordinates
+
+```json
+{
+  "commands": {
+    "tp": {
+      "enabled": true,
+      "command": "tp"
+    }
+  }
+}
+```
+
+#### Noclip Command
+**Default Command:** `noclip`  
+**Purpose:** Enable freecam/fly mode for staff
+
+```json
+{
+  "commands": {
+    "noclip": {
+      "enabled": true,
+      "command": "noclip"
+    }
+  }
+}
+```
+
+### Vehicle Commands
+
+#### Delete Vehicle Command
+**Default Command:** `dv`  
+**Purpose:** Delete the nearest vehicle
+
+```json
+{
+  "commands": {
+    "dv": {
+      "enabled": true,
+      "command": "dv"
+    }
+  }
+}
+```
+
+#### Fix Vehicle Command
+**Default Command:** `fix`  
+**Purpose:** Repair the current vehicle
+
+```json
+{
+  "commands": {
+    "fix": {
+      "enabled": true,
+      "command": "fix"
+    }
+  }
+}
+```
+
+#### Flip Vehicle Command
+**Default Command:** `flip`  
+**Purpose:** Upright a flipped vehicle
+
+```json
+{
+  "commands": {
+    "flip": {
+      "enabled": true,
+      "command": "flip"
+    }
+  }
+}
+```
+
+#### Car Command
+**Default Command:** `car`  
+**Purpose:** Spawn a vehicle
+
+```json
+{
+  "commands": {
+    "car": {
+      "enabled": true,
+      "command": "car"
+    }
+  }
+}
+```
+
+### Player Status Commands
+
+#### Godmode Command
+**Default Command:** `god`  
+**Purpose:** Toggle invincibility for players
+
+```json
+{
+  "commands": {
+    "god": {
+      "enabled": true,
+      "command": "god"
+    }
+  }
+}
+```
+
+#### Heal Command
+**Default Command:** `heal`  
+**Purpose:** Restore health and armor
+
+```json
+{
+  "commands": {
+    "heal": {
+      "enabled": true,
+      "command": "heal"
+    }
+  }
+}
+```
+
+#### Invisibility Command
+**Default Command:** `invis`  
+**Purpose:** Hide the player from others
+
+```json
+{
+  "commands": {
+    "invis": {
+      "enabled": true,
+      "command": "invis"
+    }
+  }
+}
+```
+
+### Revival Commands
+
+#### Revive Command
+**Default Command:** `revive`  
+**Purpose:** Revive a specific player
+
+```json
+{
+  "commands": {
+    "revive": {
+      "enabled": true,
+      "command": "revive"
+    }
+  }
+}
+```
+
+#### Revive All Command
+**Default Command:** `reviveall`  
+**Purpose:** Revive all players on the server
+
+```json
+{
+  "commands": {
+    "reviveall": {
+      "enabled": true,
+      "command": "reviveall"
+    }
+  }
+}
+```
+
+#### Revive Area Command
+**Default Command:** `revivearea`  
+**Purpose:** Revive all players within a specified area
+
+```json
+{
+  "commands": {
+    "revivearea": {
+      "enabled": true,
+      "command": "revivearea"
+    }
+  }
+}
+```
+
+### Item & Job Management
+
+#### Set Job Command
+**Default Command:** `setjob`  
+**Purpose:** Assign jobs to players (framework-dependent)
+
+```json
+{
+  "commands": {
+    "setjob": {
+      "enabled": true,
+      "command": "setjob"
+    }
+  }
+}
+```
+
+#### Give Item Command
+**Default Command:** `giveitem`  
+**Purpose:** Give items to players
+
+```json
+{
+  "commands": {
+    "giveitem": {
+      "enabled": true,
+      "command": "giveitem"
+    }
+  }
+}
+```
+
+#### Give Weapon Command
+**Default Command:** `giveweapon`  
+**Purpose:** Give weapons to players
+
+```json
+{
+  "commands": {
+    "giveweapon": {
+      "enabled": true,
+      "command": "giveweapon"
+    }
+  }
+}
+```
+
+#### Clear Inventory Command
+**Default Command:** `clearinv`  
+**Purpose:** Clear a player's inventory
+
+```json
+{
+  "commands": {
+    "clearinv": {
+      "enabled": true,
+      "command": "clearinv"
+    }
+  }
+}
+```
+
+### Server Management Commands
+
+#### Announce Command
+**Default Command:** `announce`  
+**Purpose:** Broadcast server-wide messages
+
+```json
+{
+  "commands": {
+    "announce": {
+      "enabled": true,
+      "command": "announce"
+    }
+  }
+}
+```
+
+#### Weather Command
+**Default Command:** `weather`  
+**Purpose:** Control server weather
+
+```json
+{
+  "commands": {
+    "weather": {
+      "enabled": true,
+      "command": "weather"
+    }
+  }
+}
+```
+
+#### Time Command
+**Default Command:** `time`  
+**Purpose:** Control in-game time
+
+```json
+{
+  "commands": {
+    "time": {
+      "enabled": true,
+      "command": "time"
+    }
+  }
+}
+```
+
+#### Wipe Command
+**Default Command:** `wipe`  
+**Purpose:** Clear entities from the server
+
+```json
+{
+  "commands": {
+    "wipe": {
+      "enabled": true,
+      "command": "wipe"
+    }
+  }
+}
+```
+
+### Utility Commands
+
+#### Coordinates Command
+**Default Command:** `coords`  
+**Purpose:** Display current player coordinates
+
+```json
+{
+  "commands": {
+    "coords": {
+      "enabled": true,
+      "command": "coords"
+    }
+  }
+}
+```
+
+### Mass Action Commands
+
+#### Kick All Command
+**Default Command:** `kickall`  
+**Default Status:** `disabled`  
+**Purpose:** Kick all players from the server
+
+> **⚠️ Warning:** This command is disabled by default due to its destructive nature.
+
+```json
+{
+  "commands": {
+    "kickall": {
+      "enabled": false,
+      "command": "kickall"
+    }
+  }
+}
+```
